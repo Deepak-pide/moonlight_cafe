@@ -22,22 +22,31 @@ let session = null;
 let profile = null;
 let businesses = [];
 let businessCategories = [];
+let shopCategories = [];
 let orders = [];
 let ads = [];
 let follows = [];
 let reviews = [];
 let members = [];
+let partnerApplications = [];
+let currentPartnerApplication = null;
 let page = "home";
 let category = "";
 let selectedShopId = "";
-let selectedCatalogCategory = "All";
+let selectedCatalogCategory = "";
 let ownerSection = "overview";
 let adminSection = "approvals";
+let adminCategoryBusinessId = "";
+let partnerSection = "deliveries";
 let cart = loadCart();
 let guestBrowsing = false;
 let authMode = "sign-in";
 let authNotice = "";
 let loading = false;
+let realtimeChannel = null;
+let realtimeRefresh = false;
+let storefrontPreviewObjectUrl = "";
+let storefrontPreviewFile = null;
 
 function loadCart() {
   try {
@@ -86,18 +95,21 @@ function businessThemeColors(business) {
 }
 
 async function loadData() {
-  const [businessResult, categoryResult, adsResult, reviewResult] = await Promise.all([
+  const [businessResult, categoryResult, shopCategoryResult, adsResult, reviewResult] = await Promise.all([
     supabase.from("businesses").select("*, products(*)").order("created_at"),
     supabase.from("business_categories").select("*").order("name"),
+    supabase.from("shop_categories").select("*").order("name"),
     supabase.from("ads").select("*").order("created_at", { ascending: false }),
     supabase.from("business_reviews").select("id,business_id,customer_id,rating,review,created_at,updated_at").order("created_at", { ascending: false })
   ]);
   if (businessResult.error) throw businessResult.error;
   if (categoryResult.error) throw categoryResult.error;
+  if (shopCategoryResult.error) throw shopCategoryResult.error;
   if (adsResult.error) throw adsResult.error;
   if (reviewResult.error) throw reviewResult.error;
   businesses = businessResult.data || [];
   businessCategories = categoryResult.data || [];
+  shopCategories = shopCategoryResult.data || [];
   for (const business of businesses) {
     const savedCategories = businessCategories
       .filter((entry) => entry.business_id === business.id)
@@ -115,6 +127,7 @@ async function loadData() {
 
   if (!session) {
     profile = null;
+    currentPartnerApplication = null;
     return;
   }
 
@@ -124,10 +137,12 @@ async function loadData() {
 
   const requests = [
     supabase.from("orders").select("*, order_items(*)").order("created_at", { ascending: false }),
-    supabase.from("follows").select("business_id")
+    supabase.from("follows").select("business_id"),
+    supabase.from("delivery_partner_applications").select("*").eq("user_id", session.user.id).maybeSingle()
   ];
   if (profile.role === "admin") {
     requests.push(supabase.from("profiles").select("id,email,full_name,role").order("created_at"));
+    requests.push(supabase.from("delivery_partner_applications").select("*, profiles(id,email,full_name,phone)").order("created_at", { ascending: false }));
   }
   const results = await Promise.all(requests);
   for (const result of results) {
@@ -135,7 +150,11 @@ async function loadData() {
   }
   orders = results[0].data || [];
   follows = (results[1].data || []).map((entry) => entry.business_id);
-  if (profile.role === "admin") members = results[2].data || [];
+  currentPartnerApplication = results[2].data;
+  if (profile.role === "admin") {
+    members = results[3].data || [];
+    partnerApplications = results[4].data || [];
+  }
 }
 
 function header(title, subtitle, eyebrow = "YOUR NEIGHBOURHOOD") {
@@ -147,9 +166,25 @@ function empty(title, detail) {
 }
 
 function categoryClass(name) {
-  if (name === "Grocery") return "category-grocery";
+  if (["Grocery", "Groceries"].includes(name)) return "category-grocery";
   if (name === "Stationery") return "category-stationery";
   return "category-cafe";
+}
+
+function categoryIcon(name) {
+  if (/grocer|food|market/i.test(name)) return "🥬";
+  if (/station|book|paper/i.test(name)) return "✏️";
+  if (/flower|gift/i.test(name)) return "💐";
+  if (/bakery|bake/i.test(name)) return "🥐";
+  return "☕";
+}
+
+function categoryDescription(name) {
+  if (/grocer|food|market/i.test(name)) return "Fresh everyday picks";
+  if (/station|book|paper/i.test(name)) return "Paper goods & more";
+  if (/flower|gift/i.test(name)) return "Thoughtful local gifts";
+  if (/bakery|bake/i.test(name)) return "Fresh from the oven";
+  return "Neighbourhood favourites";
 }
 
 function skeletonCards(count = 3) {
@@ -184,14 +219,14 @@ function card(business) {
 }
 
 function renderHome() {
-  const popular = businesses.filter((business) => ["Cafe & dining", "Bakery", "Groceries", "Stationery"].includes(business.category)).slice(0, 3);
-  main.innerHTML = `<div class="page-container">${header("Good things grow close to home.", "Find lovely local shops, their latest offers and things to order.")}<section class="hero"><div class="hero-copy"><div class="eyebrow">MEET YOUR NEIGHBOURHOOD</div><h2>Support local. Find something wonderful.</h2><p>Browse nearby businesses and order directly from their catalogues.</p><button class="primary-button" data-page="explore">Explore nearby shops →</button></div><div class="hero-art" aria-hidden="true"><div class="hero-sun"></div><div class="hero-window"></div><span class="hero-cup">☕</span><span class="hero-plant">🪴</span></div></section><div class="section-heading"><div><h2>Shop by categories</h2><p>Pick what you’re looking for</p></div><button class="text-button" data-page="explore">All categories →</button></div><div class="home-category-grid">${[["Cafe & Bakery","☕","Fresh coffee & bakes"],["Grocery","🥬","Fresh everyday picks"],["Stationery","✏️","Paper goods & more"]].map(([name,icon,copy]) => `<button class="home-category-card ${categoryClass(name)}" data-category="${name}"><span class="home-category-icon">${icon}</span><strong>${name}</strong><small>${copy}</small></button>`).join("")}</div><div class="section-heading"><div><h2>Popular dealers nearby</h2><p>Neighbourhood favourites</p></div><button class="text-button" data-page="explore">See all shops →</button></div><div class="business-grid">${popular.map(card).join("") || `<div class="empty-state" style="grid-column:1/-1"><span>🏡</span><strong>No local businesses yet</strong><p>We're getting your neighbourhood ready. Browse by category or check back soon.</p>${session && profile?.role === "customer" ? '<button class="primary-button" data-action="apply-business">Register your business</button>' : !session ? '<button class="primary-button" data-action="sign-in">Sign in to register your business</button>' : ""}</div>`}</div><div class="section-heading"><div><h2>A little love from local</h2><p>Offers approved by neighbourhood administrators</p></div></div><div class="feed-layout"><div>${ads.filter((ad) => ad.status === "live").slice(0, 3).map((ad) => `<article class="update-card"><div class="update-avatar">📣</div><div class="update-content"><strong>${escape(shopById(ad.business_id)?.name || "Local shop")}</strong><small>Approved neighbourhood offer</small><p><strong>${escape(ad.title)}</strong><br>${escape(ad.message)}</p></div></article>`).join("") || empty("No live offers","Check back for new neighbourhood promotions.")}</div></div></div>`;
+  const categories = shopCategories.map((entry) => entry.name).slice(0, 6);
+  const popular = businesses.filter((business) => business.status === "approved").slice(0, 3);
+  main.innerHTML = `<div class="page-container">${header("Good things grow close to home.", "Find lovely local shops, their latest offers and things to order.")}<section class="hero"><div class="hero-copy"><div class="eyebrow">MEET YOUR NEIGHBOURHOOD</div><h2>Support local. Find something wonderful.</h2><p>Browse nearby businesses and order directly from their catalogues.</p><button class="primary-button" data-page="explore">Explore nearby shops →</button></div><div class="hero-art" aria-hidden="true"><div class="hero-sun"></div><div class="hero-window"></div><span class="hero-cup">☕</span><span class="hero-plant">🪴</span></div></section><div class="section-heading"><div><h2>Shop by category</h2><p>Find the kind of local business you need</p></div><button class="text-button" data-page="explore">Browse shops →</button></div><div class="home-category-grid">${categories.map((name) => `<button class="home-category-card ${categoryClass(name)}" data-category="${escape(name)}"><span class="home-category-icon">${categoryIcon(name)}</span><strong>${escape(name)}</strong><small>${categoryDescription(name)}</small></button>`).join("") || empty("Categories coming soon","Local business categories will appear here.")}</div><div class="section-heading"><div><h2>Local shops nearby</h2><p>Neighbourhood businesses</p></div><button class="text-button" data-page="explore">See all shops →</button></div><div class="business-grid">${popular.map(card).join("") || `<div class="empty-state" style="grid-column:1/-1"><span>🏡</span><strong>No local businesses yet</strong><p>Register your business or check back when local shops join.</p>${session && profile?.role === "customer" ? '<button class="primary-button" data-action="apply-business">Register your business</button>' : !session ? '<button class="primary-button" data-action="sign-in">Sign in to register your business</button>' : ""}</div>`}</div><div class="section-heading"><div><h2>A little love from local</h2><p>Offers approved by neighbourhood administrators</p></div></div><div class="feed-layout"><div>${ads.filter((ad) => ad.status === "live").slice(0, 3).map((ad) => `<article class="update-card"><div class="update-avatar">📣</div><div class="update-content"><strong>${escape(shopById(ad.business_id)?.name || "Local shop")}</strong><small>Approved neighbourhood offer</small><p><strong>${escape(ad.title)}</strong><br>${escape(ad.message)}</p></div></article>`).join("") || empty("No live offers","Check back for new neighbourhood promotions.")}</div></div></div>`;
 }
 
 function visibleBusinesses() {
   return businesses.filter((business) => {
-    const businessCategory = business.category === "Groceries" ? "Grocery" : ["Cafe & dining", "Bakery"].includes(business.category) ? "Cafe & Bakery" : business.category;
-    return (!category || businessCategory === category)
+    return (!category || business.category === category)
       && (business.status === "approved" || business.owner_id === session?.user?.id);
   });
 }
@@ -202,7 +237,7 @@ function renderExplore() {
   const emptyResults = noBusinesses
     ? `<div class="empty-state" style="grid-column:1/-1"><span>🏡</span><strong>No local businesses registered yet</strong><p>We haven’t found any approved shops in this neighbourhood. Check back soon, or register your business to get started.</p>${session && profile?.role === "customer" ? '<button class="primary-button" data-action="apply-business">Register your business</button>' : !session ? '<button class="primary-button" data-action="sign-in">Sign in to register your business</button>' : ""}</div>`
     : empty("No shops in this category yet","Try another category or check back later.");
-  main.innerHTML = `<div class="page-container">${header("Explore local shops", "Choose a category to find neighbourhood favourites.")}<div class="explore-category-grid">${["All","Cafe & Bakery","Grocery","Stationery"].map((item) => `<button class="explore-category-card ${item === "All" ? "category-all" : categoryClass(item)} ${item === "All" ? !category ? "active" : "" : category === item ? "active" : ""}" data-category="${item}"><span>${item === "All" ? "✦" : item === "Grocery" ? "🥬" : item === "Stationery" ? "✏️" : "☕"}</span><strong>${item}</strong></button>`).join("")}</div><div class="section-heading" style="margin-top:26px"><div><h2>${category ? `${escape(category)} shops` : "All shops nearby"}</h2><p>${results.length} businesses</p></div>${category ? '<button class="text-button" data-clear-category>Show all →</button>' : ""}</div><div class="business-grid">${results.map(card).join("") || emptyResults}</div></div>`;
+  main.innerHTML = `<div class="page-container">${header("Explore local shops", "Choose a category to find neighbourhood favourites.")}<div class="explore-category-grid">${shopCategories.map(({ name }) => `<button class="explore-category-card ${categoryClass(name)} ${category === name ? "active" : ""}" data-category="${escape(name)}"><span>${categoryIcon(name)}</span><strong>${escape(name)}</strong></button>`).join("")}</div><div class="section-heading" style="margin-top:26px"><div><h2>${category ? `${escape(category)} shops` : "All shops nearby"}</h2><p>${results.length} businesses</p></div>${category ? '<button class="text-button" data-clear-category>Clear filter →</button>' : ""}</div><div class="business-grid">${results.map(card).join("") || emptyResults}</div></div>`;
 }
 
 function renderShop() {
@@ -215,7 +250,7 @@ function renderShop() {
   const [accent, pale, ink] = themeValues[business.theme] || themeValues.coffee;
   const products = business.products || [];
   const categories = business.categories || [...new Set(products.map((product) => product.category))];
-  const shown = selectedCatalogCategory === "All"
+  const shown = !selectedCatalogCategory
     ? products
     : selectedCatalogCategory === "Offers"
       ? products.filter((product) => product.offer || business.offer)
@@ -232,19 +267,92 @@ function renderShop() {
       ? `<button class="secondary-button" data-action="sign-in">Sign in to rate this shop</button>`
       : "";
   const reviewCards = businessReviews.map((review) => `<article class="review-card"><div class="review-card-heading"><strong>${review.customer_id === session?.user?.id ? "Your review" : "Neighbour"}</strong><span>${"★".repeat(review.rating)}${"☆".repeat(5 - review.rating)}</span></div>${review.review ? `<p>${escape(review.review)}</p>` : `<p class="review-empty-copy">Rating only</p>`}<small>${new Date(review.created_at).toLocaleDateString()}</small></article>`).join("");
-  main.innerHTML = `<div class="page-container shop-page" style="--shop-accent:${accent};--shop-pale:${pale};--shop-soft:${pale};--shop-ink:${ink}"><button class="shop-back-button" data-page="explore">← <span>Back to explore</span></button><section class="store-hero">${business.image_url ? `<img class="store-cover-photo" src="${escape(business.image_url)}" alt="">` : ""}<span class="store-cover-shade"></span><div class="store-identity"><span class="store-logo">${business.category === "Groceries" ? "🥬" : business.category === "Stationery" ? "📚" : "☕"}</span><div><span class="store-category">${escape(business.category)}</span><h1>${escape(business.name)} ${business.verified ? '<span class="verified">✓</span>' : ""}</h1><p>${escape(business.handle)} <span>·</span> <strong>★ ${Number(business.rating) > 0 ? Number(business.rating).toFixed(1) : "New"}</strong> <span>(${business.reviews || 0} reviews)</span></p></div></div><button class="store-follow ${follows.includes(business.id) ? "following" : ""}" data-follow="${business.id}" aria-pressed="${follows.includes(business.id)}">${follows.includes(business.id) ? "♥ Following" : "♡ Follow shop"}</button></section><div class="store-meta"><span>⌖ ${escape(business.branches?.join(" · ") || "Indiranagar")}</span><span>◷ ${escape(business.hours || "Opening hours not listed")}</span><span>Pickup · Local delivery</span></div><section class="store-welcome"><div><small>WELCOME TO OUR SHOP</small><p>${escape(business.description)}</p></div></section>${business.offer ? `<button class="store-offer" data-catalog-category="Offers"><span>✦ NEIGHBOURHOOD OFFER</span><strong>${escape(business.offer)}</strong><small>Tap to see the offer</small></button>` : ""}<div class="section-heading store-catalog-heading"><div><h2>Shop the catalogue</h2><p>Choose a category or browse everything</p></div><span class="store-product-count">${products.length} items</span></div>${categories.length || business.offer ? `<div class="catalog-categories"><button class="catalog-chip ${selectedCatalogCategory === "All" ? "active" : ""}" data-catalog-category="All">All items</button>${business.offer ? `<button class="catalog-chip ${selectedCatalogCategory === "Offers" ? "active" : ""}" data-catalog-category="Offers">✦ Offers</button>` : ""}${categories.map((item) => `<button class="catalog-chip ${selectedCatalogCategory === item ? "active" : ""}" data-catalog-category="${escape(item)}">${escape(item)}</button>`).join("")}</div>` : ""}<div class="catalog-grid">${shown.map((product) => `<article class="catalog-product"><div class="catalog-product-art">${product.image_url ? `<img src="${escape(product.image_url)}" alt="${escape(product.name)}">` : `<span>${escape(product.emoji || "✨")}</span>`}${product.offer ? `<b>${escape(product.offer)}</b>` : ""}</div><div class="catalog-product-copy"><small>${escape(product.category)}</small><strong>${escape(product.name)}</strong><p>${escape(product.details)}</p><div class="catalog-product-buy"><strong>${money(product.price)}</strong><button class="catalog-add" data-add="${product.id}" ${product.stock <= 0 ? "disabled" : ""}>${product.stock > 0 ? "＋ Add" : "Sold out"}</button></div></div></article>`).join("") || productEmpty}</div><section class="store-details-panel"><div><small>VISIT US</small><strong>${escape(business.branches?.join(" · ") || "Indiranagar")}</strong></div><div><small>OPENING HOURS</small><strong>${escape(business.hours || "Please contact the shop")}</strong></div><div><small>ORDER OPTIONS</small><strong>Pickup and local delivery</strong></div></section><section class="store-reviews"><div class="store-reviews-heading"><div><small>NEIGHBOURHOOD NOTES</small><h2>Ratings & reviews</h2><p>What people think about this shop</p></div>${reviewAction}</div><div class="store-review-list">${reviewCards || `<p class="review-empty">No ratings yet. Be the first to share your experience.</p>`}</div></section></div>`;
+  const categoryControls = categories.length || business.offer
+    ? `<div class="catalog-categories">${business.offer ? `<button class="catalog-chip ${selectedCatalogCategory === "Offers" ? "active" : ""}" data-catalog-category="Offers">✦ Offers</button>` : ""}${categories.map((item) => `<button class="catalog-chip ${selectedCatalogCategory === item ? "active" : ""}" data-catalog-category="${escape(item)}">${escape(item)}</button>`).join("")}${selectedCatalogCategory ? `<button class="catalog-chip catalog-clear-filter" data-catalog-category="">Clear filter</button>` : ""}</div>`
+    : "";
+  main.innerHTML = `<div class="page-container shop-page" style="--shop-accent:${accent};--shop-pale:${pale};--shop-soft:${pale};--shop-ink:${ink}"><button class="shop-back-button" data-page="explore">← <span>Back to explore</span></button><section class="store-hero">${business.image_url ? `<img class="store-cover-photo" src="${escape(business.image_url)}" alt="">` : ""}<span class="store-cover-shade"></span><div class="store-identity"><span class="store-logo">${business.category === "Groceries" ? "🥬" : business.category === "Stationery" ? "📚" : "☕"}</span><div><span class="store-category">${escape(business.category)}</span><h1>${escape(business.name)} ${business.verified ? '<span class="verified">✓</span>' : ""}</h1><p>${escape(business.handle)} <span>·</span> <strong>★ ${Number(business.rating) > 0 ? Number(business.rating).toFixed(1) : "New"}</strong> <span>(${business.reviews || 0} reviews)</span></p></div></div><button class="store-follow ${follows.includes(business.id) ? "following" : ""}" data-follow="${business.id}" aria-pressed="${follows.includes(business.id)}">${follows.includes(business.id) ? "♥ Following" : "♡ Follow shop"}</button></section><div class="store-meta"><span>⌖ ${escape(business.branches?.join(" · ") || "Indiranagar")}</span><span>◷ ${escape(business.hours || "Opening hours not listed")}</span><span>Pickup · Local delivery</span></div><section class="store-welcome"><div><small>WELCOME TO OUR SHOP</small><p>${escape(business.description)}</p></div></section>${business.offer ? `<button class="store-offer" data-catalog-category="Offers"><span>✦ NEIGHBOURHOOD OFFER</span><strong>${escape(business.offer)}</strong><small>Tap to see the offer</small></button>` : ""}<div class="section-heading store-catalog-heading"><div><h2>Shop the catalogue</h2><p>Choose a category or browse everything</p></div><span class="store-product-count">${products.length} items</span></div>${categoryControls}<div class="catalog-grid">${shown.map((product) => `<article class="catalog-product"><div class="catalog-product-art">${product.image_url ? `<img src="${escape(product.image_url)}" alt="${escape(product.name)}">` : `<span>${escape(product.emoji || "✨")}</span>`}${product.offer ? `<b>${escape(product.offer)}</b>` : ""}</div><div class="catalog-product-copy"><small>${escape(product.category)}</small><strong>${escape(product.name)}</strong><p>${escape(product.details)}</p><div class="catalog-product-buy"><strong>${money(product.price)}</strong><button class="catalog-add" data-add="${product.id}" ${product.stock <= 0 ? "disabled" : ""}>${product.stock > 0 ? "＋ Add" : "Sold out"}</button></div></div></article>`).join("") || productEmpty}</div><section class="store-details-panel"><div><small>VISIT US</small><strong>${escape(business.branches?.join(" · ") || "Indiranagar")}</strong></div><div><small>OPENING HOURS</small><strong>${escape(business.hours || "Please contact the shop")}</strong></div><div><small>ORDER OPTIONS</small><strong>Pickup and local delivery</strong></div></section><section class="store-reviews"><div class="store-reviews-heading"><div><small>NEIGHBOURHOOD NOTES</small><h2>Ratings & reviews</h2><p>What people think about this shop</p></div>${reviewAction}</div><div class="store-review-list">${reviewCards || `<p class="review-empty">No ratings yet. Be the first to share your experience.</p>`}</div></section></div>`;
 }
 
 function renderProfile() {
+  if (!session) {
+    main.innerHTML = `<div class="page-container profile-page">${header("Your neighbourhood account","Keep track of local orders, follow shops and save your favourites.")}<section class="guest-profile-card"><span class="guest-profile-icon">☕</span><div><span class="eyebrow">A LITTLE MORE LOCAL</span><h2>Your orders, all in one place.</h2><p>Sign in to see order updates from local shops, follow your favourite businesses and keep your details ready for checkout.</p><button class="primary-button" data-action="sign-in">Sign in to your account</button></div></section><section class="profile-shortcuts"><button class="profile-shortcut" data-page="explore"><span>⌕</span><strong>Explore local shops</strong><small>Find something lovely nearby</small><b>→</b></button><button class="profile-shortcut" data-auth-action="sign-up"><span>♡</span><strong>Create an account</strong><small>Save shops and track orders</small><b>→</b></button></section><section class="profile-order-preview"><div class="profile-section-heading"><div><h2>Order updates</h2><p>Accepted, preparing, ready and delivery updates appear here.</p></div><span class="profile-order-icon">↗</span></div><div class="guest-order-placeholder"><span>▤</span><strong>Your order timeline is waiting</strong><small>Sign in after placing an order to follow it from confirmation through completion.</small></div></section></div>`;
+    return;
+  }
   const myOrders = orders.filter((order) => order.customer_id === session?.user?.id);
-  main.innerHTML = `<div class="page-container">${header("Your profile", "Your account, local shops and orders in one place.")}<section class="profile-card"><span class="avatar profile-avatar">${escape(profile?.full_name?.[0] || session.user.email[0]).toUpperCase()}</span><div class="profile-card-copy"><h2>${escape(profile?.full_name || "Neighbour")}</h2><p>${escape(profile?.email || session.user.email)}</p><span>${escape(profile?.neighbourhood || "Indiranagar, Bengaluru")}</span></div><button class="secondary-button" data-action="edit-profile">Edit profile</button></section><div class="workspace-tabs"><button class="workspace-tab active">Your orders</button><button class="workspace-tab" data-page="following">Following (${follows.length})</button></div><section class="orders-list">${myOrders.map(orderCard).join("") || empty("No orders yet","Browse local shops and your orders will appear here.")}</section>${profile?.role === "customer" ? `<section class="dashboard-panel"><h2>Run a neighbourhood shop?</h2><p>Apply to list your business. An administrator reviews each application.</p><button class="primary-button" data-action="apply-business">Apply to join</button></section>` : ""}</div>`;
+  const activeOrders = myOrders.filter((order) => !["Completed", "Cancelled"].includes(order.status)).length;
+  const completedOrders = myOrders.filter((order) => order.status === "Completed").length;
+  main.innerHTML = `<div class="page-container profile-page">${header(`Welcome back, ${profile?.full_name?.split(" ")[0] || "Neighbour"}`, "Your local orders and favourite shops, together.")}<section class="profile-card"><span class="avatar profile-avatar">${escape(profile?.full_name?.[0] || session.user.email[0]).toUpperCase()}</span><div class="profile-card-copy"><h2>${escape(profile?.full_name || "Neighbour")}</h2><p>${escape(profile?.email || session.user.email)}</p><span>⌖ ${escape(profile?.neighbourhood || "Indiranagar, Bengaluru")}</span></div><button class="secondary-button" data-action="edit-profile">Edit profile</button></section><section class="profile-stat-grid"><article><span>↗</span><small>In progress</small><strong>${activeOrders}</strong></article><article><span>✓</span><small>Completed orders</small><strong>${completedOrders}</strong></article><article><span>♡</span><small>Following</small><strong>${follows.length}</strong></article></section><div class="profile-section-heading"><div><h2>My orders</h2><p>Follow every order from confirmation to collection or delivery.</p></div><button class="text-button" data-page="explore">Explore shops →</button></div><section class="orders-list customer-orders">${myOrders.map(orderCard).join("") || empty("Your first local order starts here","Explore neighbourhood shops and your order updates will appear here.")}</section>${profile?.role === "customer" ? `<section class="dashboard-panel profile-business-prompt"><span>🏪</span><div><h2>Run a neighbourhood shop?</h2><p>Apply to list your business. An administrator reviews each application.</p></div><button class="secondary-button" data-action="apply-business">Apply to join</button></section>${currentPartnerApplication ? `<section class="partner-application-status"><span>🚲</span><div><strong>Delivery partner application</strong><small>Application status: ${escape(currentPartnerApplication.status)}</small></div></section>` : `<section class="dashboard-panel profile-business-prompt"><span>🚲</span><div><h2>Deliver for your neighbourhood</h2><p>Apply to become a delivery partner. An administrator will review your application.</p></div><button class="secondary-button" data-action="apply-delivery-partner">Apply to partner</button></section>`}` : ""}</div>`;
 }
 
 function orderCard(order, owner = false) {
   const shop = shopById(order.business_id);
-  const items = (order.order_items || []).map((item) => `<li>${item.quantity} × ${escape(item.product_name)} — ${money(item.unit_price * item.quantity)}</li>`).join("");
-  const nextStatus = order.status === "New" ? "Accepted" : order.status === "Accepted" ? "Ready" : order.status === "Ready" ? "Completed" : "";
-  return `<article class="order-row"><div><div class="order-id">${escape(order.id.slice(0, 8).toUpperCase())} · ${escape(order.status)}</div><strong>${escape(owner ? order.customer_name : shop?.name || "Local shop")}</strong><small>${escape(order.branch)} · ${escape(order.fulfillment)} · ${new Date(order.created_at).toLocaleString()}</small><ul>${items}</ul></div><strong>${money(order.total)}</strong><button class="small-button" data-invoice="${order.id}">View bill</button>${owner ? `<button class="small-button" data-share-bill="${order.id}">Share bill</button>` : ""}${owner && nextStatus ? `<button class="small-button blue" data-order-status="${order.id}" data-next-status="${nextStatus}">${nextStatus}</button>` : ""}${owner && order.status === "New" ? `<button class="small-button" data-cancel-order="${order.id}">Decline</button>` : ""}</article>`;
+  const orderSteps = ["New", "Accepted", "Preparing", "Ready", ...(order.fulfillment === "Delivery" ? ["On the way"] : []), "Completed"];
+  const currentStep = orderSteps.indexOf(order.status);
+  const nextStatus = order.status === "New" ? "Accepted"
+    : order.status === "Accepted" ? "Preparing"
+      : order.status === "Preparing" ? "Ready"
+        : order.status === "Ready" && order.fulfillment === "Pickup" ? "Completed" : "";
+  const progress = order.status === "Cancelled"
+    ? `<div class="order-cancelled-note">This order was cancelled.</div>`
+    : `<ol class="order-progress" aria-label="Order progress">${orderSteps.map((step, index) => `<li class="${index < currentStep ? "complete" : index === currentStep ? "current" : ""}"><span>${index < currentStep ? "✓" : index + 1}</span><small>${step}</small></li>`).join("")}</ol>`;
+  const items = (order.order_items || []).map((item) => `<li><span>${item.quantity} × ${escape(item.product_name)}</span><strong>${money(item.unit_price * item.quantity)}</strong></li>`).join("");
+  return `<article class="order-row ${owner ? "owner-order-card" : "customer-order-card"}"><div class="order-card-heading"><div><div class="order-id">ORDER ${escape(order.id.slice(0, 8).toUpperCase())}</div><strong class="order-shop">${escape(owner ? order.customer_name : shop?.name || "Local shop")}</strong></div><span class="status-pill ${escape(order.status.replaceAll(" ", "-"))}">${escape(order.status)}</span></div>${progress}<div class="order-card-meta"><span>⌖ ${escape(order.branch)}</span><span>${escape(order.fulfillment)}</span>${order.fulfillment === "Delivery" && order.delivery_address ? `<span>Delivery to ${escape(order.delivery_address)}</span>` : ""}<span>${new Date(order.created_at).toLocaleString()}</span></div><ul class="order-items">${items}</ul><div class="order-card-footer"><strong class="order-total">${money(order.total)}${order.delivery_fee ? `<small> includes ${money(order.delivery_fee)} delivery</small>` : ""}</strong><div class="order-actions"><button class="small-button" data-invoice="${order.id}">View bill</button>${owner ? `<button class="small-button" data-share-bill="${order.id}">Share bill</button>` : ""}${owner && nextStatus ? `<button class="small-button blue" data-order-status="${order.id}" data-next-status="${nextStatus}">Mark ${nextStatus}</button>` : ""}${owner && order.status === "New" ? `<button class="small-button" data-cancel-order="${order.id}">Decline</button>` : ""}</div></div></article>`;
+}
+
+function deliveryOrderCard(order) {
+  const business = shopById(order.business_id);
+  const claimed = order.delivery_partner_id === session?.user?.id;
+  const items = (order.order_items || []).map((item) => `<li>${item.quantity} × ${escape(item.product_name)}</li>`).join("");
+  const action = !claimed
+    ? `<button class="primary-button" data-claim-delivery="${order.id}">Accept delivery</button>`
+    : order.status === "Ready"
+      ? `<button class="primary-button" data-delivery-status="${order.id}" data-next-status="On the way">Start delivery</button>`
+      : order.status === "On the way"
+        ? `<button class="primary-button" data-delivery-status="${order.id}" data-next-status="Completed">Mark delivered</button>`
+        : "";
+  return `<article class="delivery-job-card ${claimed ? "claimed" : ""}"><div class="delivery-job-heading"><div><span class="delivery-category">${categoryIcon(business?.category || "")} ${escape(business?.category || "Local shop")}</span><h3>${escape(business?.name || "Local shop")}</h3><small>Order ${escape(order.id.slice(0, 8).toUpperCase())}</small></div><span class="status-pill ${escape(order.status.replaceAll(" ", "-"))}">${claimed ? order.status : "Ready for pickup"}</span></div><div class="delivery-job-details"><div><small>CUSTOMER</small><strong>${escape(order.customer_name)}</strong><a href="tel:${escape(order.phone)}">${escape(order.phone)}</a></div><div><small>PICKUP</small><strong>${escape(order.branch)}</strong></div><div><small>DELIVER TO</small><strong>${escape(order.delivery_address || "No delivery address provided")}</strong></div></div><ul class="delivery-job-items">${items}</ul><div class="delivery-job-footer"><span>Delivery fee · ${money(order.delivery_fee)} <small>Order total ${money(order.total)}</small></span>${action}</div></article>`;
+}
+
+function renderPartner() {
+  if (partnerSection === "profile") {
+    main.innerHTML = `<div class="page-container">${header("Delivery partner profile","Keep your contact details current for delivery updates.","DELIVERY PARTNER")}<section class="profile-card"><span class="avatar profile-avatar">${escape(profile?.full_name?.[0] || session.user.email[0]).toUpperCase()}</span><div class="profile-card-copy"><h2>${escape(profile?.full_name || "Delivery partner")}</h2><p>${escape(profile?.email || session.user.email)}</p><span>⌖ ${escape(profile?.neighbourhood || "Neighbourhood not set")}</span></div><button class="secondary-button" data-action="edit-profile">Edit profile</button></section><section class="dashboard-panel partner-contact-card"><h2>Partner contact details</h2><p>Customers and shops use your phone number to coordinate deliveries.</p><strong>${escape(profile?.phone || "Add a phone number to your profile")}</strong></section></div>`;
+    return;
+  }
+  const partnerOrders = orders.filter((order) => order.fulfillment === "Delivery"
+    && ((order.status === "Ready" && !order.delivery_partner_id)
+      || order.delivery_partner_id === session?.user?.id));
+  const grouped = shopCategories.map((entry) => ({
+    ...entry,
+    orders: partnerOrders.filter((order) => shopById(order.business_id)?.category === entry.name)
+  })).filter((entry) => entry.orders.length);
+  main.innerHTML = `<div class="page-container">${header("Neighbourhood deliveries","Accept ready orders and keep each customer updated.","DELIVERY PARTNER")}<section class="delivery-summary"><span>🚲</span><div><strong>${partnerOrders.length} delivery ${partnerOrders.length === 1 ? "request" : "requests"}</strong><small>Ready orders appear as soon as the shop prepares them.</small></div><button class="secondary-button" data-live-nav="profile">Your profile</button></section><div class="delivery-category-groups">${grouped.map((group) => `<section class="delivery-category-group"><div class="delivery-category-heading"><h2>${categoryIcon(group.name)} ${escape(group.name)}</h2><span>${group.orders.length} ${group.orders.length === 1 ? "order" : "orders"}</span></div><div class="delivery-job-list">${group.orders.map(deliveryOrderCard).join("")}</div></section>`).join("") || empty("No delivery requests right now","We’ll notify you when a ready delivery is available.")}</div></div>`;
+}
+
+function updateStorefrontPreview(form) {
+  const preview = main.querySelector("[data-storefront-preview]");
+  if (!preview || !form) return;
+  const values = new FormData(form);
+  const categoryName = String(values.get("category") || "");
+  preview.querySelector("[data-preview-category]").textContent = categoryName;
+  preview.querySelector("[data-preview-name]").textContent = String(values.get("name") || "Your shop name");
+  preview.querySelector("[data-preview-description]").textContent = String(values.get("description") || "Your shop description will appear here.");
+  preview.querySelector("[data-preview-branches]").textContent = String(values.get("branches") || "").split(/\r?\n/).map((branch) => branch.trim()).find(Boolean) || "Add a branch";
+  preview.style.setProperty("--preview-accent", String(values.get("accent") || themeValues.coffee[0]));
+  preview.style.setProperty("--preview-surface", String(values.get("surface") || themeValues.coffee[1]));
+  preview.style.setProperty("--preview-ink", String(values.get("ink") || themeValues.coffee[2]));
+  preview.dataset.themeStyle = String(values.get("theme_style") || "solid");
+  const file = form.elements.namedItem("image_file").files[0];
+  if (file !== storefrontPreviewFile) {
+    if (storefrontPreviewObjectUrl) URL.revokeObjectURL(storefrontPreviewObjectUrl);
+    storefrontPreviewObjectUrl = file ? URL.createObjectURL(file) : "";
+    storefrontPreviewFile = file || null;
+  }
+  const enteredUrl = String(values.get("image_url") || "").trim();
+  const imageUrl = storefrontPreviewObjectUrl || (/^https?:\/\//i.test(enteredUrl) ? enteredUrl : "");
+  const image = preview.querySelector("[data-preview-image]");
+  image.hidden = !imageUrl;
+  if (imageUrl) image.src = imageUrl;
+  preview.querySelector("[data-preview-icon]").hidden = Boolean(imageUrl);
 }
 
 function openInvoice(orderId) {
@@ -252,7 +360,13 @@ function openInvoice(orderId) {
   if (!order) return;
   const shop = shopById(order.business_id);
   const rows = (order.order_items || []).map((item) => `<tr><td>${escape(item.product_name)}</td><td>${item.quantity}</td><td>${money(item.unit_price)}</td><td>${money(item.unit_price * item.quantity)}</td></tr>`).join("");
-  const invoice = `<html><head><title>Pussore bill ${escape(order.id.slice(0, 8))}</title><style>body{font:14px Arial,sans-serif;color:#17233b;max-width:760px;margin:50px auto;padding:0 30px}h1{font-size:26px}header{display:flex;justify-content:space-between;border-bottom:2px solid #4268e9;padding-bottom:18px}.muted{color:#788398;font-size:12px}table{width:100%;border-collapse:collapse;margin:35px 0}th,td{text-align:left;padding:12px;border-bottom:1px solid #e9edf4}th{background:#f6f7fb;color:#657187}td:last-child,th:last-child{text-align:right}.total{text-align:right;font-size:18px;font-weight:bold}.foot{margin-top:50px;color:#788398;font-size:12px}@media print{body{margin:0}}</style></head><body><header><div><h1>${escape(shop?.name || "Pussore shop")}</h1><div class="muted">${escape(order.branch)} · Bengaluru</div></div><div><h2>BILL</h2><div class="muted">${escape(order.id.slice(0, 8).toUpperCase())}<br>${escape(new Date(order.created_at).toLocaleString())}</div></div></header><p><strong>Bill to:</strong> ${escape(order.customer_name)}<br><span class="muted">${escape(order.fulfillment)} order · ${escape(order.status)}</span></p><table><thead><tr><th>Item</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead><tbody>${rows}</tbody></table><div class="total">Total ${money(order.total)}</div><p class="foot">Thank you for shopping local. Taxes are not configured in this marketplace.</p><script>window.onload=()=>window.print()<\\/script></body></html>`;
+  const deliveryDetails = order.fulfillment === "Delivery"
+    ? `<br><span class="muted">Delivery to: ${escape(order.delivery_address || "Address not provided")}</span>`
+    : "";
+  const deliveryChargeRow = order.delivery_fee
+    ? `<tr><td colspan="3">Delivery fee</td><td>${money(order.delivery_fee)}</td></tr>`
+    : "";
+  const invoice = `<html><head><title>Pussore bill ${escape(order.id.slice(0, 8))}</title><style>body{font:14px Arial,sans-serif;color:#17233b;max-width:760px;margin:50px auto;padding:0 30px}h1{font-size:26px}header{display:flex;justify-content:space-between;border-bottom:2px solid #4268e9;padding-bottom:18px}.muted{color:#788398;font-size:12px}table{width:100%;border-collapse:collapse;margin:35px 0}th,td{text-align:left;padding:12px;border-bottom:1px solid #e9edf4}th{background:#f6f7fb;color:#657187}td:last-child,th:last-child{text-align:right}.total{text-align:right;font-size:18px;font-weight:bold}.foot{margin-top:50px;color:#788398;font-size:12px}@media print{body{margin:0}}</style></head><body><header><div><h1>${escape(shop?.name || "Pussore shop")}</h1><div class="muted">${escape(order.branch)} · Bengaluru</div></div><div><h2>BILL</h2><div class="muted">${escape(order.id.slice(0, 8).toUpperCase())}<br>${escape(new Date(order.created_at).toLocaleString())}</div></div></header><p><strong>Bill to:</strong> ${escape(order.customer_name)}<br><span class="muted">${escape(order.fulfillment)} order · ${escape(order.status)}</span>${deliveryDetails}</p><table><thead><tr><th>Item</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead><tbody>${rows}${deliveryChargeRow}</tbody></table><div class="total">Total ${money(order.total)}</div><p class="foot">Thank you for shopping local. Taxes are not configured in this marketplace.</p><script>window.onload=()=>window.print()<\\/script></body></html>`;
   const printWindow = window.open("", "_blank");
   if (!printWindow) { notify("Allow pop-ups to print or save your bill."); return; }
   printWindow.document.write(invoice);
@@ -283,10 +397,11 @@ function renderBusiness() {
     const shopOrders = orders.filter((order) => order.business_id === business.id);
     main.innerHTML = `<div class="page-container">${header("Orders from your neighbours","Confirm requests and keep customers in the loop.","BUSINESS WORKSPACE")}<div class="workspace-tabs">${ownerTabs()}</div><section class="dashboard-panel">${shopOrders.map((order) => orderCard(order, true)).join("") || empty("No orders yet","Customer orders will appear here.")}</section></div>`;
   } else if (ownerSection === "products") {
-    main.innerHTML = `<div class="page-container">${header("Your product shelf","Manage products and the categories neighbours can browse.","BUSINESS WORKSPACE")}<div class="workspace-tabs">${ownerTabs()}</div><div class="owner-product-actions"><button class="primary-button" data-action="add-product">＋ Add a product</button><form id="category-form" class="category-create-form"><label class="form-field">New category<input name="name" maxlength="50" required placeholder="e.g. Seasonal specials"></label><button class="secondary-button">Add category</button></form></div><section class="owner-category-list">${(business.categories || []).map((name) => `<span class="owner-category-chip">${escape(name)}</span>`).join("") || `<small>No categories yet. Add one before creating a product.</small>`}</section><section class="dashboard-panel">${(business.products || []).map((product) => `<div class="product-management-row"><div class="product-management-name">${product.image_url ? `<img class="product-management-photo" src="${escape(product.image_url)}" alt="">` : `<span>${escape(product.emoji || "✨")}</span>`}${escape(product.name)} <small>${escape(product.category)}</small></div><strong>${money(product.price)}</strong><span class="stock-state ${product.stock <= 0 ? "out" : ""}">${product.stock} in stock</span><div class="product-management-actions"><button class="small-button" data-edit-product="${product.id}">Edit</button><button class="small-button" data-delete-product="${product.id}">Remove</button><button class="small-button" data-stock="${product.id}" data-stock-value="${product.stock}">${product.stock > 0 ? "Mark unavailable" : "Restock"}</button></div></div>`).join("") || empty("No products yet","Add your first product to the catalogue.")}</section></div>`;
+    main.innerHTML = `<div class="page-container">${header("Your product shelf","Manage products and the categories neighbours can browse.","BUSINESS WORKSPACE")}<div class="workspace-tabs">${ownerTabs()}</div><div class="owner-product-actions"><button class="primary-button" data-action="add-product">＋ Add a product</button><form id="category-form" class="category-create-form"><label class="form-field">New category<input name="name" maxlength="50" required placeholder="e.g. Seasonal specials"></label><button class="secondary-button">Add category</button></form></div><section class="owner-category-list">${businessCategories.filter((entry) => entry.business_id === business.id).map((entry) => `<span class="owner-category-chip">${escape(entry.name)}<button data-delete-category="${entry.id}" aria-label="Delete ${escape(entry.name)} category">×</button></span>`).join("") || `<small>No categories yet. Add one before creating products.</small>`}</section><section class="dashboard-panel">${(business.products || []).map((product) => `<div class="product-management-row"><div class="product-management-name">${product.image_url ? `<img class="product-management-photo" src="${escape(product.image_url)}" alt="">` : `<span>${escape(product.emoji || "✨")}</span>`}${escape(product.name)} <small>${escape(product.category)}</small></div><strong>${money(product.price)}</strong><span class="stock-state ${product.stock <= 0 ? "out" : ""}">${product.stock} in stock</span><div class="product-management-actions"><button class="small-button" data-edit-product="${product.id}">Edit</button><button class="small-button" data-delete-product="${product.id}">Remove</button><button class="small-button" data-stock="${product.id}" data-stock-value="${product.stock}">${product.stock > 0 ? "Mark unavailable" : "Restock"}</button></div></div>`).join("") || empty("No products yet","Add your first product to the catalogue.")}</section></div>`;
   } else if (ownerSection === "storefront") {
     const colors = businessThemeColors(business);
-    main.innerHTML = `<div class="page-container">${header("Shop appearance","Set the storefront details and colours customers see.","BUSINESS WORKSPACE")}<div class="workspace-tabs">${ownerTabs()}</div><section class="dashboard-panel storefront-settings"><form id="storefront-form" class="checkout-form"><label class="form-field">Business display name<input name="name" required value="${escape(business.name)}"></label><label class="form-field">Shop ID / handle<input name="handle" required value="${escape(business.handle)}"></label><label class="form-field">Category<select name="category">${["Cafe & dining","Bakery","Groceries","Stationery","Flowers & gifts","Other local business"].map((item) => `<option ${business.category === item ? "selected" : ""}>${item}</option>`).join("")}</select></label><label class="form-field">Short description<input name="description" required value="${escape(business.description)}"></label><label class="form-field">Public storefront image URL<input name="image_url" type="url" value="${escape(business.image_url || "")}" placeholder="https://..."></label><label class="form-field">Or upload a storefront image<input name="image_file" type="file" accept="image/jpeg,image/png,image/gif,image/webp"><small>JPG, PNG, GIF or WebP; maximum 5 MB.</small></label><label class="form-field">Neighbourhood offer<input name="offer" value="${escape(business.offer)}"></label><label class="form-field">Opening hours<input name="hours" value="${escape(business.hours)}"></label><label class="form-field">Branches (one per line)<textarea name="branches" rows="3" required>${escape((business.branches || []).join("\n"))}</textarea></label><label class="form-field">Store theme<select name="theme"><option value="coffee" ${business.theme === "coffee" ? "selected" : ""}>Coffee brown</option><option value="green" ${business.theme === "green" ? "selected" : ""}>Fresh green</option><option value="maroon" ${business.theme === "maroon" ? "selected" : ""}>Stationery maroon</option></select></label><label class="form-field">Storefront finish<select name="theme_style"><option value="solid" ${business.theme_style === "solid" ? "selected" : ""}>Solid</option><option value="gradient" ${business.theme_style === "gradient" ? "selected" : ""}>Gradient</option><option value="glass" ${business.theme_style === "glass" ? "selected" : ""}>Glass</option></select></label><div class="theme-color-fields"><label>Accent<input type="color" name="accent" value="${colors.accent}"></label><label>Surface<input type="color" name="surface" value="${colors.surface}"></label><label>Text<input type="color" name="ink" value="${colors.ink}"></label></div><button class="primary-button">Save storefront preferences</button></form></section></div>`;
+    main.innerHTML = `<div class="page-container">${header("Shop appearance","Preview storefront changes as you make them.","BUSINESS WORKSPACE")}<div class="workspace-tabs">${ownerTabs()}</div><section class="storefront-live-preview" data-storefront-preview><span class="storefront-preview-label">LIVE SHOP PREVIEW</span><div class="storefront-preview-cover"><img data-preview-image alt="" hidden><span data-preview-icon>${categoryIcon(business.category)}</span></div><div class="storefront-preview-copy"><small data-preview-category>${escape(business.category)}</small><h2 data-preview-name>${escape(business.name)}</h2><p data-preview-description>${escape(business.description)}</p><span data-preview-branches>${escape(business.branches?.[0] || "Add a branch")}</span></div></section><section class="dashboard-panel storefront-settings"><form id="storefront-form" class="checkout-form" data-storefront-live><label class="form-field">Business display name<input name="name" required value="${escape(business.name)}"></label><label class="form-field">Shop ID / handle<input name="handle" required value="${escape(business.handle)}"></label><label class="form-field">Category<select name="category">${shopCategories.map(({ name }) => `<option ${business.category === name ? "selected" : ""}>${escape(name)}</option>`).join("")}</select></label><label class="form-field">Short description<input name="description" required value="${escape(business.description)}"></label><label class="form-field">Public storefront image URL<input name="image_url" type="url" value="${escape(business.image_url || "")}" placeholder="https://..."></label><label class="form-field">Or upload a storefront image<input name="image_file" type="file" accept="image/jpeg,image/png,image/gif,image/webp"><small>JPG, PNG, GIF or WebP; maximum 5 MB.</small></label><label class="form-field">Neighbourhood offer<input name="offer" value="${escape(business.offer)}"></label><label class="form-field">Opening hours<input name="hours" value="${escape(business.hours)}"></label><label class="form-field">Branches (one per line)<textarea name="branches" rows="3" required>${escape((business.branches || []).join("\n"))}</textarea></label><label class="form-field">Store theme<select name="theme"><option value="coffee" ${business.theme === "coffee" ? "selected" : ""}>Coffee brown</option><option value="green" ${business.theme === "green" ? "selected" : ""}>Fresh green</option><option value="maroon" ${business.theme === "maroon" ? "selected" : ""}>Stationery maroon</option></select></label><label class="form-field">Storefront finish<select name="theme_style"><option value="solid" ${business.theme_style === "solid" ? "selected" : ""}>Solid</option><option value="gradient" ${business.theme_style === "gradient" ? "selected" : ""}>Gradient</option><option value="glass" ${business.theme_style === "glass" ? "selected" : ""}>Glass</option></select></label><div class="theme-color-fields"><label>Accent<input type="color" name="accent" value="${colors.accent}"></label><label>Surface<input type="color" name="surface" value="${colors.surface}"></label><label>Text<input type="color" name="ink" value="${colors.ink}"></label></div><button class="primary-button">Save storefront preferences</button></form></section></div>`;
+    updateStorefrontPreview(main.querySelector("#storefront-form"));
   } else if (ownerSection === "ads") {
     main.innerHTML = `<div class="page-container">${header("Tell the neighbourhood","Promotions need administrator approval before they appear publicly.","BUSINESS WORKSPACE")}<div class="workspace-tabs">${ownerTabs()}</div><button class="primary-button" data-action="add-promotion">＋ Create promotion</button><section class="dashboard-panel">${ads.filter((ad) => ad.business_id === business.id).map(adCard).join("") || empty("No promotions yet","Create one to tell the neighbourhood what’s new.")}</section></div>`;
   } else {
@@ -305,18 +420,49 @@ function adCard(ad, admin = false) {
 }
 
 function renderAdmin() {
+  const intro = {
+    approvals: ["Business applications", "Review shops before they join the neighbourhood."],
+    categories: ["Shop categories & fees", "Manage public shop categories, delivery fees and product categories."],
+    deliveries: ["Delivery settings", "Set category-based delivery fees."],
+    partners: ["Delivery partner applications", "Review requests to join the delivery team."],
+    ads: ["Neighbourhood promotions", "Review business campaigns before they go live."],
+    roles: ["Team & roles", "Manage account access and member roles."]
+  }[adminSection] || ["Administrator workspace", "Manage the local marketplace."];
+  let content = "";
   if (adminSection === "ads") {
-    main.innerHTML = `<div class="page-container">${header("Neighbourhood promotions","Review business campaigns before they go live.","ADMINISTRATOR WORKSPACE")}<div class="workspace-tabs">${adminTabs()}</div><section class="dashboard-panel">${ads.map((ad) => adCard(ad, true)).join("") || empty("No promotions","Submitted promotions appear here for review.")}</section></div>`;
+    content = `<section class="dashboard-panel">${ads.map((ad) => adCard(ad, true)).join("") || empty("No promotions","Submitted promotions appear here for review.")}</section>`;
   } else if (adminSection === "roles") {
-    main.innerHTML = `<div class="page-container">${header("Team and roles","Administrator access is managed here.","ADMINISTRATOR WORKSPACE")}<div class="workspace-tabs">${adminTabs()}</div><section class="dashboard-panel">${members.map((member) => `<div class="product-management-row"><div class="product-management-name">${escape(member.full_name || member.email)} <small>${escape(member.email)}</small></div><select data-member-role="${member.id}"><option value="customer" ${member.role === "customer" ? "selected" : ""}>Customer</option><option value="business" ${member.role === "business" ? "selected" : ""}>Business</option><option value="admin" ${member.role === "admin" ? "selected" : ""}>Administrator</option></select></div>`).join("") || empty("No members found","New accounts will appear here.")}</section></div>`;
+    content = `<section class="dashboard-panel">${members.map((member) => `<div class="product-management-row"><div class="product-management-name">${escape(member.full_name || member.email)} <small>${escape(member.email)}</small></div><select data-member-role="${member.id}"><option value="customer" ${member.role === "customer" ? "selected" : ""}>Customer</option><option value="business" ${member.role === "business" ? "selected" : ""}>Business</option><option value="delivery_partner" ${member.role === "delivery_partner" ? "selected" : ""} disabled>Delivery partner (approve application)</option><option value="admin" ${member.role === "admin" ? "selected" : ""}>Administrator</option></select></div>`).join("") || empty("No members found","New accounts will appear here.")}</section>`;
+  } else if (adminSection === "categories" || adminSection === "deliveries") {
+    const categoryRows = shopCategories.map((entry) => {
+      const inUse = businesses.some((business) => business.category === entry.name);
+      return `<article class="admin-category-row"><div class="admin-category-title"><span>${categoryIcon(entry.name)}</span><strong>${escape(entry.name)}</strong></div><form class="admin-delivery-fee-form" data-shop-category-id="${entry.id}"><label>Delivery fee (₹)<input name="delivery_fee" type="number" min="0" step="1" required value="${entry.delivery_fee}"></label><button class="small-button blue">Save fee</button></form><button class="small-button" data-delete-shop-category="${entry.id}" ${inUse ? "disabled title=\"Move shops to another category first\"" : ""}>Delete</button></article>`;
+    }).join("");
+    const shopOptions = businesses.map((business) => `<option value="${business.id}" ${adminCategoryBusinessId === business.id ? "selected" : ""}>${escape(business.name)}</option>`).join("");
+    const chosenBusiness = businesses.find((business) => business.id === adminCategoryBusinessId) || businesses[0];
+    if (!adminCategoryBusinessId && chosenBusiness) adminCategoryBusinessId = chosenBusiness.id;
+    const productCategoryRows = businessCategories
+      .filter((entry) => entry.business_id === chosenBusiness?.id)
+      .map((entry) => `<article class="admin-category-row"><div class="admin-category-title"><span>▦</span><strong>${escape(entry.name)}</strong></div><span class="admin-category-owner">${escape(chosenBusiness?.name || "")}</span><button class="small-button" data-delete-category="${entry.id}">Delete</button></article>`)
+      .join("");
+    const shopCategoryPanel = `<section class="dashboard-panel admin-category-panel"><div class="dashboard-heading"><div><h2>Public shop categories</h2><p>Delivery fees are charged on delivery orders in that shop category.</p></div></div><form id="shop-category-form" class="admin-category-create"><label class="form-field">New shop category<input name="name" required maxlength="60" placeholder="e.g. Tailoring"></label><label class="form-field">Delivery fee (₹)<input name="delivery_fee" type="number" min="0" step="1" value="0" required></label><button class="primary-button">Add shop category</button></form><div class="admin-category-list">${categoryRows || empty("No shop categories","Add a shop category to get started.")}</div></section>`;
+    const deliveryFeePanel = `<section class="dashboard-panel admin-category-panel"><div class="dashboard-heading"><div><h2>Fees by shop category</h2><p>Delivery fees apply to each delivery order and are added to its total.</p></div></div><div class="admin-category-list">${categoryRows || empty("No shop categories","Add a shop category in Categories first.")}</div></section>`;
+    const businessCategoryPanel = `<section class="dashboard-panel admin-category-panel"><div class="dashboard-heading"><div><h2>Business product categories</h2><p>Manage catalogue filters for a specific shop.</p></div><select data-admin-category-business aria-label="Choose a shop">${shopOptions}</select></div><form id="admin-business-category-form" class="admin-category-create" data-business-id="${chosenBusiness?.id || ""}"><label class="form-field">New product category<input name="name" required maxlength="50" placeholder="e.g. Handmade gifts"></label><button class="primary-button" ${chosenBusiness ? "" : "disabled"}>Add category</button></form><div class="admin-category-list">${productCategoryRows || empty("No product categories","Choose a shop and add its first product category.")}</div></section>`;
+    content = adminSection === "categories"
+      ? `${shopCategoryPanel}${businessCategoryPanel}`
+      : deliveryFeePanel;
+  } else if (adminSection === "partners") {
+    const pending = partnerApplications.filter((application) => application.status === "pending");
+    content = `<section class="dashboard-panel"><div class="dashboard-heading"><h2>Partner applications <span class="nav-count">${pending.length}</span></h2></div>${pending.map((application) => `<div class="admin-card"><span class="admin-business-icon">🚲</span><span class="admin-business-copy"><strong>${escape(application.profiles?.full_name || application.profiles?.email || "Applicant")}</strong><small>${escape(application.profiles?.phone || "No phone number")} · ${escape(application.message || "No additional details")}</small></span><div class="admin-actions"><button class="small-button" data-partner-application="${application.id}" data-next-status="rejected">Decline</button><button class="small-button blue" data-partner-application="${application.id}" data-next-status="approved">Approve partner</button></div></div>`).join("") || empty("No applications waiting","Partner applications will appear here.")}</section>`;
   } else {
     const pending = businesses.filter((business) => business.status === "pending");
-    main.innerHTML = `<div class="page-container">${header("Approve local businesses","Review applications before shops join the neighbourhood.","ADMINISTRATOR WORKSPACE")}<div class="workspace-tabs">${adminTabs()}</div><section class="dashboard-panel"><div class="dashboard-heading"><h2>Business applications <span class="nav-count">${pending.length}</span></h2></div>${pending.map((business) => `<div class="admin-card"><span class="admin-business-icon">🏪</span><span class="admin-business-copy"><strong>${escape(business.name)}</strong><small>${escape(business.category)} · ${escape(business.handle)}</small></span><div class="admin-actions"><button class="small-button" data-business-status="${business.id}" data-next-status="rejected">Decline</button><button class="small-button blue" data-business-status="${business.id}" data-next-status="approved">Approve</button></div></div>`).join("") || empty("All caught up","No business applications are waiting for review.")}</section></div>`;
+    content = `<section class="dashboard-panel"><div class="dashboard-heading"><h2>Business applications <span class="nav-count">${pending.length}</span></h2></div>${pending.map((business) => `<div class="admin-card"><span class="admin-business-icon">🏪</span><span class="admin-business-copy"><strong>${escape(business.name)}</strong><small>${escape(business.category)} · ${escape(business.handle)}</small></span><div class="admin-actions"><button class="small-button" data-business-status="${business.id}" data-next-status="rejected">Decline</button><button class="small-button blue" data-business-status="${business.id}" data-next-status="approved">Approve</button></div></div>`).join("") || empty("All caught up","No business applications are waiting for review.")}</section>`;
   }
+  main.innerHTML = `<div class="page-container">${header(intro[0], intro[1], "ADMINISTRATOR WORKSPACE")}<div class="workspace-tabs admin-tabs">${adminTabs()}</div>${content}</div>`;
 }
 
 function adminTabs() {
-  return [["approvals","Business approvals"],["ads","Ad campaigns"],["roles","Team & roles"]]
+  return [["approvals","Shop approvals"],["categories","Categories"],["deliveries","Delivery fees"],["partners","Delivery partners"],["ads","Promotions"],["roles","Team & roles"]]
     .map(([key,label]) => `<button class="workspace-tab ${adminSection === key ? "active" : ""}" data-admin-section="${key}">${label}</button>`).join("");
 }
 
@@ -324,12 +470,14 @@ function updateChrome() {
   document.body.classList.toggle("auth-screen", !session && !guestBrowsing);
   const role = profile?.role || "customer";
   const links = role === "admin"
-    ? [["approvals","✓","Approvals"],["ads","▧","Ad campaigns"],["roles","⚙","Team & roles"]]
+    ? [["approvals","✓","Approvals"],["categories","▦","Categories"],["deliveries","₹","Delivery fees"],["partners","♧","Partners"],["ads","▧","Promotions"],["roles","⚙","Team & roles"]]
     : role === "business"
       ? [["overview","⌂","Overview"],["orders","▤","Orders"],["products","▧","Products"],["storefront","✦","Shop appearance"],["ads","▤","Promotions"]]
+      : role === "delivery_partner"
+        ? [["deliveries","↗","Deliveries"],["profile","☺","Profile"]]
       : [["home","⌂","Home"],["explore","⌕","Explore"],["following","♡","Following"],["profile","☺","Profile"]];
   document.getElementById("sidebar-label").textContent = role === "admin" ? "ADMIN WORKSPACE" : role === "business" ? "BUSINESS WORKSPACE" : "YOUR SPACE";
-  const activeSection = role === "admin" ? adminSection : role === "business" ? ownerSection : page === "shop" ? "explore" : page;
+  const activeSection = role === "admin" ? adminSection : role === "business" ? ownerSection : role === "delivery_partner" ? partnerSection : page === "shop" ? "explore" : page;
   document.getElementById("side-nav").innerHTML = links.map(([key,icon,label]) => `<button class="nav-link ${key === activeSection ? "active" : ""}" data-live-nav="${key}" ${key === activeSection ? 'aria-current="page"' : ""}><span class="nav-icon">${icon}</span>${label}</button>`).join("");
   const mobile = role === "customer"
     ? [["home","⌂","Home"],["explore","⌕","Explore"],["following","♡","Following"],["profile","☺","Profile"]]
@@ -342,7 +490,7 @@ function updateChrome() {
       ? `<button class="sound-toggle" id="sound-toggle" type="button" data-toggle-sound aria-pressed="${soundsEnabled()}" aria-label="${soundsEnabled() ? "Turn interface sounds off" : "Turn interface sounds on"}" title="${soundsEnabled() ? "Turn interface sounds off" : "Turn interface sounds on"}">${soundsEnabled() ? "🔊" : "🔇"}</button><button class="soft-button" data-action="cart">Bag <span>${cart.reduce((sum,item) => sum + item.quantity,0)}</span></button><button class="primary-button" data-action="sign-in">Sign in</button>`
       : "";
   document.getElementById("sidebar-profile-name").textContent = profile?.full_name || session?.user?.email || "Neighbour";
-  document.querySelector(".sidebar-profile small").textContent = role === "admin" ? "Administrator" : role === "business" ? "Business owner" : "Local member";
+  document.querySelector(".sidebar-profile small").textContent = role === "admin" ? "Administrator" : role === "business" ? "Business owner" : role === "delivery_partner" ? "Delivery partner" : "Local member";
 }
 
 function render() {
@@ -359,6 +507,7 @@ function render() {
   }
   if (profile?.role === "admin") renderAdmin();
   else if (profile?.role === "business") renderBusiness();
+  else if (profile?.role === "delivery_partner") renderPartner();
   else if (page === "explore") renderExplore();
   else if (page === "shop") {
     renderShop();
@@ -390,11 +539,16 @@ function checkoutModal() {
   }
   const business = cart.length ? shopById(cart[0].businessId) : null;
   if (!business) return;
-  modalRoot.innerHTML = `<div class="modal-backdrop" data-close-modal></div><section class="modal modal-simple" role="dialog" aria-modal="true" aria-label="Complete order"><button class="close-button modal-close" data-close-modal aria-label="Close">×</button><h2>Almost yours</h2><p>Your order will be sent securely to ${escape(business.name)}.</p><form id="checkout-form" class="checkout-form"><label class="form-field">Your name<input name="customer" required value="${escape(profile.full_name || "")}"></label><label class="form-field">Phone number<input name="phone" required type="tel" value="${escape(profile.phone || "")}"></label><label class="form-field">Choose a branch<select name="branch" required>${(business.branches || []).map((branch) => `<option>${escape(branch)}</option>`).join("")}</select></label><label class="checkout-option"><input type="radio" name="fulfillment" value="Pickup" checked> I’ll pick it up</label><label class="checkout-option"><input type="radio" name="fulfillment" value="Delivery"> Local delivery</label><label class="form-field">Note for the shop<input name="note" maxlength="500"></label><div class="cart-total-line"><span>Order total (confirmed by the shop)</span><strong>${money(cart.reduce((sum,item) => sum + item.price * item.quantity,0))}</strong></div><button class="primary-button">Place order request</button></form></section>`;
+  const deliveryFee = shopCategories.find((entry) => entry.name === business.category)?.delivery_fee || 0;
+  const subtotal = cart.reduce((sum,item) => sum + item.price * item.quantity,0);
+  modalRoot.innerHTML = `<div class="modal-backdrop" data-close-modal></div><section class="modal modal-simple" role="dialog" aria-modal="true" aria-label="Complete order"><button class="close-button modal-close" data-close-modal aria-label="Close">×</button><h2>Almost yours</h2><p>Your order will be sent securely to ${escape(business.name)}.</p><form id="checkout-form" class="checkout-form" data-subtotal="${subtotal}" data-delivery-fee="${deliveryFee}"><label class="form-field">Your name<input name="customer" required value="${escape(profile.full_name || "")}"></label><label class="form-field">Phone number<input name="phone" required type="tel" value="${escape(profile.phone || "")}"></label><label class="form-field">Choose a branch<select name="branch" required>${(business.branches || []).map((branch) => `<option>${escape(branch)}</option>`).join("")}</select></label><label class="checkout-option"><input type="radio" name="fulfillment" value="Pickup" checked> I’ll pick it up</label><label class="checkout-option"><input type="radio" name="fulfillment" value="Delivery"> Local delivery · ${money(deliveryFee)} fee</label><label class="form-field checkout-delivery-address" hidden>Delivery address<input name="delivery_address" maxlength="300" autocomplete="street-address" placeholder="Street, area and any delivery details"></label><label class="form-field">Note for the shop<input name="note" maxlength="500"></label><div class="checkout-costs"><div><span>Items</span><strong>${money(subtotal)}</strong></div><div class="checkout-delivery-fee" hidden><span>Delivery fee</span><strong>${money(deliveryFee)}</strong></div><div class="cart-total-line"><span>Estimated total</span><strong data-checkout-total>${money(subtotal)}</strong></div></div><button class="primary-button">Place order request</button></form></section>`;
 }
 
+function partnerApplicationModal() {
+  modalRoot.innerHTML = `<div class="modal-backdrop" data-close-modal></div><section class="modal modal-simple" role="dialog" aria-modal="true"><button class="close-button modal-close" data-close-modal aria-label="Close">×</button><h2>Become a delivery partner</h2><p>Share a few details for the neighbourhood team to review your application.</p><form id="partner-application-form" class="checkout-form"><label class="form-field">Phone number<input name="phone" type="tel" required value="${escape(profile?.phone || "")}" placeholder="A number customers can reach"></label><label class="form-field">About your availability<textarea name="message" rows="3" maxlength="300" placeholder="When and where can you deliver?"></textarea></label><button class="primary-button">Submit partner application</button></form></section>`;
+}
 function applyBusinessModal() {
-  modalRoot.innerHTML = `<div class="modal-backdrop" data-close-modal></div><section class="modal modal-simple" role="dialog" aria-modal="true"><button class="close-button modal-close" data-close-modal aria-label="Close">×</button><h2>Apply to join the neighbourhood</h2><p>An administrator reviews each new business before it appears publicly.</p><form id="business-form" class="checkout-form"><label class="form-field">Business name<input name="name" required></label><label class="form-field">Shop handle<input name="handle" required placeholder="@yourshop"></label><label class="form-field">Category<select name="category"><option>Cafe & dining</option><option>Bakery</option><option>Groceries</option><option>Stationery</option><option>Flowers & gifts</option><option>Other local business</option></select></label><label class="form-field">Description<input name="description" required maxlength="250"></label><label class="form-field">Public storefront image URL (optional)<input name="image_url" type="url" placeholder="https://..."></label><label class="form-field">Branch / address<input name="branch" required></label><label class="form-field">Opening hours<input name="hours"></label><button class="primary-button">Submit for review</button></form></section>`;
+  modalRoot.innerHTML = `<div class="modal-backdrop" data-close-modal></div><section class="modal modal-simple" role="dialog" aria-modal="true"><button class="close-button modal-close" data-close-modal aria-label="Close">×</button><h2>Apply to join the neighbourhood</h2><p>An administrator reviews each new business before it appears publicly.</p><form id="business-form" class="checkout-form"><label class="form-field">Business name<input name="name" required></label><label class="form-field">Shop handle<input name="handle" required placeholder="@yourshop"></label><label class="form-field">Category<select name="category" required>${shopCategories.map(({ name }) => `<option>${escape(name)}</option>`).join("")}</select></label><label class="form-field">Description<input name="description" required maxlength="250"></label><label class="form-field">Public storefront image URL (optional)<input name="image_url" type="url" placeholder="https://..."></label><label class="form-field">Branch / address<input name="branch" required></label><label class="form-field">Opening hours<input name="hours"></label><button class="primary-button">Submit for review</button></form></section>`;
 }
 
 function productModal(product = null) {
@@ -500,6 +654,7 @@ async function onClick(event) {
   if (target.dataset.action === "cart") { cartModal(); return; }
   if (target.dataset.action === "checkout") { checkoutModal(); return; }
   if (target.dataset.action === "apply-business") { applyBusinessModal(); return; }
+  if (target.dataset.action === "apply-delivery-partner") { partnerApplicationModal(); return; }
   if (target.dataset.action === "add-product") { productModal(); return; }
   if (target.dataset.editProduct) {
     const product = (myBusiness()?.products || []).find((item) => item.id === target.dataset.editProduct);
@@ -543,26 +698,34 @@ async function onClick(event) {
     }
     if (profile?.role === "admin") adminSection = target.dataset.liveNav;
     else if (profile?.role === "business") ownerSection = target.dataset.liveNav;
+    else if (profile?.role === "delivery_partner") partnerSection = target.dataset.liveNav;
     else page = target.dataset.liveNav;
     render();
     return;
   }
   if (target.dataset.ownerSection) { ownerSection = target.dataset.ownerSection; render(); return; }
   if (target.dataset.adminSection) { adminSection = target.dataset.adminSection; render(); return; }
-  if (target.dataset.page) { page = target.dataset.page; category = ""; render(); return; }
+  if (target.dataset.page) {
+    if (profile?.role === "delivery_partner") partnerSection = target.dataset.page === "profile" ? "profile" : "deliveries";
+    else if (profile?.role === "admin") adminSection = target.dataset.page;
+    else page = target.dataset.page;
+    category = "";
+    render();
+    return;
+  }
   if (target.dataset.category) {
-    const sound = { "Cafe & Bakery": "cafe", Grocery: "grocery", Stationery: "stationery" }[target.dataset.category] || "tap";
+    const sound = /grocer|food|market/i.test(target.dataset.category) ? "grocery" : /station|book|paper/i.test(target.dataset.category) ? "stationery" : /cafe|bakery|bake/i.test(target.dataset.category) ? "cafe" : "tap";
     playUiSound(sound);
-    category = target.dataset.category === "All" ? "" : target.dataset.category;
+    category = category === target.dataset.category ? "" : target.dataset.category;
     page = "explore";
     render();
     return;
   }
   if (target.dataset.clearCategory !== undefined) { category = ""; renderExplore(); return; }
-  if (target.dataset.catalogCategory) { selectedCatalogCategory = target.dataset.catalogCategory; renderShop(); return; }
+  if (target.dataset.catalogCategory !== undefined) { selectedCatalogCategory = selectedCatalogCategory === target.dataset.catalogCategory ? "" : target.dataset.catalogCategory; renderShop(); return; }
   if (target.dataset.shopCard || target.dataset.shop) {
     selectedShopId = target.dataset.shopCard || target.dataset.shop;
-    selectedCatalogCategory = "All";
+    selectedCatalogCategory = "";
     page = "shop";
     render();
     return;
@@ -642,6 +805,51 @@ async function onClick(event) {
     notify(`Business application ${target.dataset.nextStatus}.`);
     return;
   }
+  if (target.dataset.partnerApplication) {
+    const { error } = await supabase.from("delivery_partner_applications")
+      .update({ status: target.dataset.nextStatus })
+      .eq("id", target.dataset.partnerApplication);
+    if (error) throw error;
+    await loadData();
+    render();
+    notify(`Delivery partner application ${target.dataset.nextStatus}.`);
+    return;
+  }
+  if (target.dataset.claimDelivery) {
+    const { error } = await supabase.rpc("claim_delivery_order", { p_order_id: target.dataset.claimDelivery });
+    if (error) throw error;
+    await loadData();
+    render();
+    notify("Delivery accepted. The order is assigned to you.");
+    return;
+  }
+  if (target.dataset.deliveryStatus) {
+    const { error } = await supabase.rpc("set_delivery_order_status", {
+      p_order_id: target.dataset.deliveryStatus,
+      p_status: target.dataset.nextStatus
+    });
+    if (error) throw error;
+    await loadData();
+    render();
+    notify(`Delivery marked ${target.dataset.nextStatus.toLowerCase()}.`);
+    return;
+  }
+  if (target.dataset.deleteCategory) {
+    const { error } = await supabase.rpc("delete_business_category", { p_category_id: target.dataset.deleteCategory });
+    if (error) throw error;
+    await loadData();
+    render();
+    notify("Product category removed.");
+    return;
+  }
+  if (target.dataset.deleteShopCategory) {
+    const { error } = await supabase.from("shop_categories").delete().eq("id", target.dataset.deleteShopCategory);
+    if (error) throw error;
+    await loadData();
+    render();
+    notify("Shop category removed.");
+    return;
+  }
   if (target.dataset.adStatus) {
     const { error } = await supabase.from("ads").update({ status: target.dataset.nextStatus }).eq("id", target.dataset.adStatus);
     if (error) throw error;
@@ -683,6 +891,11 @@ async function onSubmit(event) {
   if (form.id === "checkout-form") {
     event.preventDefault();
     const businessId = cart[0]?.businessId;
+    if (values.fulfillment === "Delivery" && !String(values.delivery_address || "").trim()) {
+      form.elements.namedItem("delivery_address").setCustomValidity("Enter the delivery address.");
+      form.elements.namedItem("delivery_address").reportValidity();
+      return;
+    }
     const { data, error } = await supabase.rpc("place_order", {
       p_business_id: businessId,
       p_customer_name: values.customer,
@@ -690,7 +903,8 @@ async function onSubmit(event) {
       p_branch: values.branch,
       p_fulfillment: values.fulfillment,
       p_note: values.note || "",
-      p_items: cart.map((item) => ({ product_id: item.productId, quantity: item.quantity }))
+      p_items: cart.map((item) => ({ product_id: item.productId, quantity: item.quantity })),
+      p_delivery_address: values.delivery_address || ""
     });
     if (error) throw error;
     cart = [];
@@ -767,6 +981,59 @@ async function onSubmit(event) {
     notify("Category added to your public catalogue.");
     return;
   }
+  if (form.id === "admin-business-category-form") {
+    event.preventDefault();
+    const { error } = await supabase.from("business_categories").insert({
+      business_id: form.dataset.businessId,
+      name: values.name.trim()
+    });
+    if (error) throw error;
+    await loadData();
+    render();
+    notify("Shop product category added.");
+    return;
+  }
+  if (form.id === "shop-category-form") {
+    event.preventDefault();
+    const { error } = await supabase.from("shop_categories").insert({
+      name: values.name.trim(),
+      delivery_fee: Number(values.delivery_fee)
+    });
+    if (error) throw error;
+    await loadData();
+    render();
+    notify("Shop category added.");
+    return;
+  }
+  if (form.id === "partner-application-form") {
+    event.preventDefault();
+    const { error: profileError } = await supabase.from("profiles")
+      .update({ phone: values.phone.trim() })
+      .eq("id", session.user.id);
+    if (profileError) throw profileError;
+    const { error } = await supabase.from("delivery_partner_applications").insert({
+      user_id: session.user.id,
+      message: values.message.trim(),
+      status: "pending"
+    });
+    if (error) throw error;
+    modalRoot.innerHTML = "";
+    await loadData();
+    render();
+    notify("Partner application sent for review.");
+    return;
+  }
+  if (form.matches("[data-shop-category-id]")) {
+    event.preventDefault();
+    const { error } = await supabase.from("shop_categories")
+      .update({ delivery_fee: Number(values.delivery_fee) })
+      .eq("id", form.dataset.shopCategoryId);
+    if (error) throw error;
+    await loadData();
+    render();
+    notify("Delivery fee updated.");
+    return;
+  }
   if (form.id === "promotion-form") {
     event.preventDefault();
     const { error } = await supabase.from("ads").insert({
@@ -841,6 +1108,25 @@ async function onSubmit(event) {
 
 async function onChange(event) {
   const target = event.target;
+  if (target.matches('[name="fulfillment"]')) {
+    const form = target.form;
+    const delivery = target.value === "Delivery";
+    const addressField = form.querySelector(".checkout-delivery-address");
+    const addressInput = form.elements.namedItem("delivery_address");
+    const deliveryFeeRow = form.querySelector(".checkout-delivery-fee");
+    const total = form.querySelector("[data-checkout-total]");
+    addressField.hidden = !delivery;
+    addressInput.required = delivery;
+    addressInput.setCustomValidity("");
+    deliveryFeeRow.hidden = !delivery;
+    total.textContent = money(Number(form.dataset.subtotal) + (delivery ? Number(form.dataset.deliveryFee) : 0));
+    return;
+  }
+  if (target.matches("[data-admin-category-business]")) {
+    adminCategoryBusinessId = target.value;
+    renderAdmin();
+    return;
+  }
   if (target.dataset.memberRole) {
     const { error } = await supabase.from("profiles").update({ role: target.value }).eq("id", target.dataset.memberRole);
     if (error) throw error;
@@ -859,6 +1145,7 @@ async function start() {
     if (nextSession) guestBrowsing = false;
     window.setTimeout(() => {
       if (!nextSession) {
+        setupRealtime();
         profile = null;
         orders = [];
         follows = [];
@@ -871,7 +1158,7 @@ async function start() {
       }
       loading = true;
       render();
-      loadData().then(() => { loading = false; render(); }).catch(renderStartupError);
+      loadData().then(() => { loading = false; setupRealtime(); render(); }).catch(renderStartupError);
     }, 0);
   });
   if (session) {
@@ -886,6 +1173,7 @@ async function start() {
     await loadData();
     loading = false;
   }
+  setupRealtime();
   render();
 }
 
@@ -895,8 +1183,74 @@ function renderStartupError(error) {
   document.body.classList.add("auth-screen");
   const databaseMissing = ["PGRST205", "42P01"].includes(error?.code)
     || /schema cache|relation .* does not exist|could not find the table/i.test(error?.message || "");
-  main.innerHTML = `<section class="setup-message"><span class="setup-icon">${databaseMissing ? "🛠️" : "☁️"}</span><p class="eyebrow">${databaseMissing ? "DATABASE SETUP NEEDED" : "CONNECTION ISSUE"}</p><h1>${databaseMissing ? "Your shops are almost ready" : "We couldn’t connect"}</h1><p>${databaseMissing ? "In Supabase SQL Editor, run the marketplace, reviews, storefront customization, and catalogue images/categories migrations in order." : escape(error?.message || "Check your internet connection and Supabase project settings, then try again.")}</p>${databaseMissing ? '<code>supabase/migrations/20261028000000_marketplace.sql</code><code>supabase/migrations/20261028010000_business_reviews.sql</code><code>supabase/migrations/20261028020000_storefront_customization.sql</code><code>supabase/migrations/20261028030000_catalog_images_categories.sql</code>' : ""}<button class="primary-button" data-action="retry">Try again</button></section>`;
+  main.innerHTML = `<section class="setup-message"><span class="setup-icon">${databaseMissing ? "🛠️" : "☁️"}</span><p class="eyebrow">${databaseMissing ? "DATABASE SETUP NEEDED" : "CONNECTION ISSUE"}</p><h1>${databaseMissing ? "Your shops are almost ready" : "We couldn’t connect"}</h1><p>${databaseMissing ? "Run each required Supabase migration once, in order. If the marketplace tables already exist, do not rerun the initial marketplace migration; continue with later migrations that have not yet been applied." : escape(error?.message || "Check your internet connection and Supabase project settings, then try again.")}</p>${databaseMissing ? '<code>supabase/migrations/20261028000000_marketplace.sql</code><code>supabase/migrations/20261028010000_business_reviews.sql</code><code>supabase/migrations/20261028020000_storefront_customization.sql</code><code>supabase/migrations/20261028030000_catalog_images_categories.sql</code><code>supabase/migrations/20261028040000_order_statuses.sql</code><code>supabase/migrations/20261028050000_marketplace_realtime_partners.sql</code>' : ""}<button class="primary-button" data-action="retry">Try again</button></section>`;
 }
+
+function setupRealtime() {
+  if (realtimeChannel) {
+    void supabase.removeChannel(realtimeChannel);
+    realtimeChannel = null;
+  }
+  const channel = supabase.channel(`marketplace-${session?.user?.id || "public"}`);
+  const tables = ["orders", "businesses", "products", "business_categories", "shop_categories", "delivery_partner_applications", "business_reviews", "follows", "profiles", "ads"];
+  for (const table of tables) {
+    channel.on("postgres_changes", { event: "*", schema: "public", table }, (payload) => {
+      if (table === "orders") {
+        const order = payload.new;
+        if (profile?.role === "delivery_partner" && order?.fulfillment === "Delivery" && order?.status === "Ready" && !order.delivery_partner_id) {
+          playUiSound("add");
+          notify("A neighbourhood delivery is ready to accept.");
+        } else if (profile?.role === "business" && order?.business_id === myBusiness()?.id && order?.status === "New") {
+          notify("A new customer order has arrived.");
+        } else if (session?.user?.id === order?.customer_id && order?.status) {
+          notify(`Your order status is now ${order.status.toLowerCase()}.`);
+        }
+      } else if (table === "delivery_partner_applications" && profile?.role === "admin" && payload.new?.status === "pending") {
+        notify("A new delivery partner application needs review.");
+      }
+      if (realtimeRefresh) return;
+      realtimeRefresh = true;
+      window.setTimeout(async () => {
+        realtimeRefresh = false;
+        try {
+          await loadData();
+          const editing = document.activeElement?.closest("form");
+          if (editing) {
+            document.body.dataset.pendingRealtimeRender = "true";
+            return;
+          }
+          render();
+        } catch (error) {
+          fail(error);
+        }
+      }, 180);
+    });
+  }
+  realtimeChannel = channel.subscribe((status) => {
+    if (channel !== realtimeChannel) return;
+    if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+      console.error(`Marketplace realtime channel ${status.toLowerCase()}.`);
+    }
+  });
+}
+
+document.addEventListener("input", (event) => {
+  const form = event.target.form;
+  if (form?.hasAttribute("data-storefront-live")) updateStorefrontPreview(form);
+});
+document.addEventListener("change", (event) => {
+  const form = event.target.form;
+  if (form?.hasAttribute("data-storefront-live")) updateStorefrontPreview(form);
+});
+document.addEventListener("focusout", (event) => {
+  if (event.target.closest("form") && document.body.dataset.pendingRealtimeRender === "true") {
+    window.setTimeout(() => {
+      if (document.activeElement?.closest("form")) return;
+      delete document.body.dataset.pendingRealtimeRender;
+      render();
+    }, 0);
+  }
+});
 
 document.addEventListener("click", (event) => { onClick(event).catch(fail); });
 document.addEventListener("submit", (event) => { onSubmit(event).catch(fail); });
