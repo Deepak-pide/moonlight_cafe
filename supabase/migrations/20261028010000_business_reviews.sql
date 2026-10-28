@@ -1,4 +1,4 @@
-create table public.business_reviews (
+create table if not exists public.business_reviews (
   id uuid primary key default gen_random_uuid(),
   business_id uuid not null references public.businesses(id) on delete cascade,
   customer_id uuid not null references public.profiles(id) on delete cascade,
@@ -9,7 +9,7 @@ create table public.business_reviews (
   unique (business_id, customer_id)
 );
 
-create index business_reviews_business_created_idx
+create index if not exists business_reviews_business_created_idx
   on public.business_reviews(business_id, created_at desc);
 
 create or replace function public.guard_business_review()
@@ -45,6 +45,7 @@ begin
 end;
 $$;
 
+drop trigger if exists business_reviews_guard on public.business_reviews;
 create trigger business_reviews_guard
   before insert or update on public.business_reviews
   for each row execute procedure public.guard_business_review();
@@ -97,6 +98,7 @@ begin
 end;
 $$;
 
+drop trigger if exists business_reviews_refresh_rating on public.business_reviews;
 create trigger business_reviews_refresh_rating
   after insert or update or delete on public.business_reviews
   for each row execute procedure public.refresh_business_rating();
@@ -127,6 +129,20 @@ begin
 end;
 $$;
 
+drop trigger if exists businesses_guard_update on public.businesses;
+
+update public.businesses b
+set rating = coalesce((
+  select round(avg(r.rating)::numeric, 1)
+  from public.business_reviews r
+  where r.business_id = b.id
+), 0),
+reviews = (
+  select count(*)::integer
+  from public.business_reviews r
+  where r.business_id = b.id
+);
+
 create trigger businesses_guard_update
   before update on public.businesses
   for each row execute procedure public.guard_business_update();
@@ -135,6 +151,7 @@ alter table public.business_reviews enable row level security;
 grant select on public.business_reviews to anon, authenticated;
 grant insert, update, delete on public.business_reviews to authenticated;
 
+drop policy if exists "Reviews for approved shops are public" on public.business_reviews;
 create policy "Reviews for approved shops are public"
   on public.business_reviews for select to anon, authenticated
   using (exists (
@@ -142,6 +159,7 @@ create policy "Reviews for approved shops are public"
     where b.id = business_id and b.status = 'approved'
   ));
 
+drop policy if exists "Customers review approved shops" on public.business_reviews;
 create policy "Customers review approved shops"
   on public.business_reviews for insert to authenticated
   with check (
@@ -158,6 +176,7 @@ create policy "Customers review approved shops"
     )
   );
 
+drop policy if exists "Customers edit their own reviews" on public.business_reviews;
 create policy "Customers edit their own reviews"
   on public.business_reviews for update to authenticated
   using (customer_id = (select auth.uid()))
@@ -175,23 +194,13 @@ create policy "Customers edit their own reviews"
     )
   );
 
+drop policy if exists "Customers delete their own reviews" on public.business_reviews;
 create policy "Customers delete their own reviews"
   on public.business_reviews for delete to authenticated
   using (customer_id = (select auth.uid()));
 
+drop policy if exists "Administrators manage business reviews" on public.business_reviews;
 create policy "Administrators manage business reviews"
   on public.business_reviews for all to authenticated
   using ((select public.is_admin()))
   with check ((select public.is_admin()));
-
-update public.businesses b
-set rating = coalesce((
-  select round(avg(r.rating)::numeric, 1)
-  from public.business_reviews r
-  where r.business_id = b.id
-), 0),
-reviews = (
-  select count(*)::integer
-  from public.business_reviews r
-  where r.business_id = b.id
-);

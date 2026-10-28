@@ -4,8 +4,8 @@ The browser-only demo remains available when Supabase environment variables are 
 
 ## Supabase database
 
-1. In Supabase, open **SQL Editor** and run the SQL files in filename order: [`supabase/migrations/20261028000000_marketplace.sql`](./supabase/migrations/20261028000000_marketplace.sql), then [`supabase/migrations/20261028010000_business_reviews.sql`](./supabase/migrations/20261028010000_business_reviews.sql). If the marketplace tables are already installed, run only the new business-reviews migration. The application cannot load live data until both features are installed.
-2. Register the first user through the application, then promote that user's profile to administrator in SQL Editor:
+1. In Supabase **SQL Editor**, run [`supabase/migrations/20261028000000_marketplace.sql`](./supabase/migrations/20261028000000_marketplace.sql) first, then [`supabase/migrations/20261028010000_business_reviews.sql`](./supabase/migrations/20261028010000_business_reviews.sql), and then [`supabase/migrations/20261028020000_storefront_customization.sql`](./supabase/migrations/20261028020000_storefront_customization.sql). Run the marketplace migration only once. If its tables are already installed, skip it and run the reviews and storefront-customization migrations. The reviews and storefront migrations are safe to rerun.
+2. Create the administrator account using **Create an account** in the app. Confirm the email first if Supabase email confirmation is enabled. In SQL Editor, promote that account's profile:
 
    ```sql
    update public.profiles
@@ -13,8 +13,12 @@ The browser-only demo remains available when Supabase environment variables are 
    where email = 'your-admin-email@example.com';
    ```
 
-3. Configure Supabase **Authentication → URL Configuration** with the Vercel production URL and the local development URL.
-4. The publishable key can be used in browser code. Never use a `service_role` or secret key in frontend code or Vercel client-side environment variables.
+   Sign in through the normal app sign-in form with that same email and password. There is no separate administrator password or pre-created admin account; the admin workspace appears after the profile role is promoted. Keep this SQL operation restricted to trusted administrators.
+
+3. Business owners also create a normal account, sign in, and submit **Apply to join** from their profile. Once an administrator approves the application, that account gets the business workspace to manage products, orders, promotions, shop details, branches, and storefront colors/styles. Owners can edit only their own approved business; approval and ratings remain administrator-controlled.
+
+4. Configure Supabase **Authentication → URL Configuration** with the Vercel production URL and the local development URL.
+5. The publishable key can be used in browser code. Never use a `service_role` or secret key in frontend code or Vercel client-side environment variables.
 
 ## Vercel
 

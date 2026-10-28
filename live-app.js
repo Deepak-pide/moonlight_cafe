@@ -73,6 +73,17 @@ function myBusiness() {
   return businesses.find((business) => business.owner_id === session?.user?.id);
 }
 
+function businessThemeColors(business) {
+  const saved = business.theme_colors || {};
+  const defaults = themeValues[business.theme] || themeValues.coffee;
+  const validColor = (value, fallback) => /^#[0-9a-f]{6}$/i.test(value || "") ? value : fallback;
+  return {
+    accent: validColor(saved.accent, defaults[0]),
+    surface: validColor(saved.surface, defaults[1]),
+    ink: validColor(saved.ink, defaults[2])
+  };
+}
+
 async function loadData() {
   const [businessResult, adsResult, reviewResult] = await Promise.all([
     supabase.from("businesses").select("*, products(*)").order("created_at"),
@@ -259,9 +270,10 @@ function renderBusiness() {
     const shopOrders = orders.filter((order) => order.business_id === business.id);
     main.innerHTML = `<div class="page-container">${header("Orders from your neighbours","Confirm requests and keep customers in the loop.","BUSINESS WORKSPACE")}<div class="workspace-tabs">${ownerTabs()}</div><section class="dashboard-panel">${shopOrders.map((order) => orderCard(order, true)).join("") || empty("No orders yet","Customer orders will appear here.")}</section></div>`;
   } else if (ownerSection === "products") {
-    main.innerHTML = `<div class="page-container">${header("Your product shelf","Manage what neighbours can order.","BUSINESS WORKSPACE")}<div class="workspace-tabs">${ownerTabs()}</div><button class="primary-button" data-action="add-product">＋ Add a product</button><section class="dashboard-panel">${(business.products || []).map((product) => `<div class="product-management-row"><div class="product-management-name"><span>${escape(product.emoji || "✨")}</span>${escape(product.name)} <small>${escape(product.category)}</small></div><strong>${money(product.price)}</strong><span class="stock-state ${product.stock <= 0 ? "out" : ""}">${product.stock} in stock</span><button class="small-button" data-stock="${product.id}" data-stock-value="${product.stock}">${product.stock > 0 ? "Mark unavailable" : "Restock"}</button></div>`).join("") || empty("No products yet","Add your first product to the catalogue.")}</section></div>`;
+    main.innerHTML = `<div class="page-container">${header("Your product shelf","Manage what neighbours can order.","BUSINESS WORKSPACE")}<div class="workspace-tabs">${ownerTabs()}</div><button class="primary-button" data-action="add-product">＋ Add a product</button><section class="dashboard-panel">${(business.products || []).map((product) => `<div class="product-management-row"><div class="product-management-name"><span>${escape(product.emoji || "✨")}</span>${escape(product.name)} <small>${escape(product.category)}</small></div><strong>${money(product.price)}</strong><span class="stock-state ${product.stock <= 0 ? "out" : ""}">${product.stock} in stock</span><div class="product-management-actions"><button class="small-button" data-edit-product="${product.id}">Edit</button><button class="small-button" data-delete-product="${product.id}">Remove</button><button class="small-button" data-stock="${product.id}" data-stock-value="${product.stock}">${product.stock > 0 ? "Mark unavailable" : "Restock"}</button></div></div>`).join("") || empty("No products yet","Add your first product to the catalogue.")}</section></div>`;
   } else if (ownerSection === "storefront") {
-    main.innerHTML = `<div class="page-container">${header("Shop appearance","Set the storefront details and colours customers see.","BUSINESS WORKSPACE")}<div class="workspace-tabs">${ownerTabs()}</div><section class="dashboard-panel"><form id="storefront-form" class="checkout-form"><label class="form-field">Business display name<input name="name" required value="${escape(business.name)}"></label><label class="form-field">Shop ID / handle<input name="handle" required value="${escape(business.handle)}"></label><label class="form-field">Short description<input name="description" required value="${escape(business.description)}"></label><label class="form-field">Neighbourhood offer<input name="offer" value="${escape(business.offer)}"></label><label class="form-field">Opening hours<input name="hours" value="${escape(business.hours)}"></label><label class="form-field">Store theme<select name="theme"><option value="coffee" ${business.theme === "coffee" ? "selected" : ""}>Coffee brown</option><option value="green" ${business.theme === "green" ? "selected" : ""}>Fresh green</option><option value="maroon" ${business.theme === "maroon" ? "selected" : ""}>Stationery maroon</option></select></label><button class="primary-button">Save storefront preferences</button></form></section></div>`;
+    const colors = businessThemeColors(business);
+    main.innerHTML = `<div class="page-container">${header("Shop appearance","Set the storefront details and colours customers see.","BUSINESS WORKSPACE")}<div class="workspace-tabs">${ownerTabs()}</div><section class="dashboard-panel storefront-settings"><form id="storefront-form" class="checkout-form"><label class="form-field">Business display name<input name="name" required value="${escape(business.name)}"></label><label class="form-field">Shop ID / handle<input name="handle" required value="${escape(business.handle)}"></label><label class="form-field">Category<select name="category">${["Cafe & dining","Bakery","Groceries","Stationery","Flowers & gifts","Other local business"].map((item) => `<option ${business.category === item ? "selected" : ""}>${item}</option>`).join("")}</select></label><label class="form-field">Short description<input name="description" required value="${escape(business.description)}"></label><label class="form-field">Neighbourhood offer<input name="offer" value="${escape(business.offer)}"></label><label class="form-field">Opening hours<input name="hours" value="${escape(business.hours)}"></label><label class="form-field">Branches (one per line)<textarea name="branches" rows="3" required>${escape((business.branches || []).join("\n"))}</textarea></label><label class="form-field">Store theme<select name="theme"><option value="coffee" ${business.theme === "coffee" ? "selected" : ""}>Coffee brown</option><option value="green" ${business.theme === "green" ? "selected" : ""}>Fresh green</option><option value="maroon" ${business.theme === "maroon" ? "selected" : ""}>Stationery maroon</option></select></label><label class="form-field">Storefront finish<select name="theme_style"><option value="solid" ${business.theme_style === "solid" ? "selected" : ""}>Solid</option><option value="gradient" ${business.theme_style === "gradient" ? "selected" : ""}>Gradient</option><option value="glass" ${business.theme_style === "glass" ? "selected" : ""}>Glass</option></select></label><div class="theme-color-fields"><label>Accent<input type="color" name="accent" value="${colors.accent}"></label><label>Surface<input type="color" name="surface" value="${colors.surface}"></label><label>Text<input type="color" name="ink" value="${colors.ink}"></label></div><button class="primary-button">Save storefront preferences</button></form></section></div>`;
   } else if (ownerSection === "ads") {
     main.innerHTML = `<div class="page-container">${header("Tell the neighbourhood","Promotions need administrator approval before they appear publicly.","BUSINESS WORKSPACE")}<div class="workspace-tabs">${ownerTabs()}</div><button class="primary-button" data-action="add-promotion">＋ Create promotion</button><section class="dashboard-panel">${ads.filter((ad) => ad.business_id === business.id).map(adCard).join("") || empty("No promotions yet","Create one to tell the neighbourhood what’s new.")}</section></div>`;
   } else {
@@ -321,6 +333,7 @@ function updateChrome() {
 }
 
 function render() {
+  document.body.classList.toggle("store-view", page === "shop" && !["admin", "business"].includes(profile?.role));
   updateChrome();
   if (!session && !guestBrowsing) {
     if (page === "profile") authNotice = "Sign in to view your account, orders and bills.";
@@ -334,7 +347,21 @@ function render() {
   if (profile?.role === "admin") renderAdmin();
   else if (profile?.role === "business") renderBusiness();
   else if (page === "explore") renderExplore();
-  else if (page === "shop") renderShop();
+  else if (page === "shop") {
+    renderShop();
+    const business = shopById(selectedShopId);
+    const storefront = main.querySelector(".shop-page");
+    if (business && storefront) {
+      const colors = businessThemeColors(business);
+      storefront.dataset.themeStyle = business.theme_style || "solid";
+      storefront.style.setProperty("--shop-accent", colors.accent);
+      storefront.style.setProperty("--shop-pale", colors.surface);
+      storefront.style.setProperty("--shop-soft", colors.surface);
+      storefront.style.setProperty("--shop-ink", colors.ink);
+      storefront.querySelector(":scope > .shop-back-button")?.remove();
+      main.insertAdjacentHTML("afterbegin", `<div class="shop-toolbar"><button class="shop-back-button" data-page="explore">← <span>Back to shops</span></button><button class="soft-button" data-action="cart">Bag <span>${cart.reduce((sum,item) => sum + item.quantity,0)}</span></button></div>`);
+    }
+  }
   else if (page === "following") renderFollowing();
   else if (page === "profile") renderProfile();
   else renderHome();
@@ -357,8 +384,8 @@ function applyBusinessModal() {
   modalRoot.innerHTML = `<div class="modal-backdrop" data-close-modal></div><section class="modal modal-simple" role="dialog" aria-modal="true"><button class="close-button modal-close" data-close-modal aria-label="Close">×</button><h2>Apply to join the neighbourhood</h2><p>An administrator reviews each new business before it appears publicly.</p><form id="business-form" class="checkout-form"><label class="form-field">Business name<input name="name" required></label><label class="form-field">Shop handle<input name="handle" required placeholder="@yourshop"></label><label class="form-field">Category<select name="category"><option>Cafe & dining</option><option>Bakery</option><option>Groceries</option><option>Stationery</option><option>Flowers & gifts</option><option>Other local business</option></select></label><label class="form-field">Description<input name="description" required maxlength="250"></label><label class="form-field">Branch / address<input name="branch" required></label><label class="form-field">Opening hours<input name="hours"></label><button class="primary-button">Submit for review</button></form></section>`;
 }
 
-function productModal() {
-  modalRoot.innerHTML = `<div class="modal-backdrop" data-close-modal></div><section class="modal modal-simple" role="dialog" aria-modal="true"><button class="close-button modal-close" data-close-modal aria-label="Close">×</button><h2>Add something to your shelf</h2><form id="product-form" class="checkout-form"><label class="form-field">Product name<input name="name" required></label><label class="form-field">Category<input name="category" required></label><label class="form-field">Price (₹)<input name="price" type="number" min="1" step="1" required></label><label class="form-field">Description<input name="details"></label><label class="form-field">Stock<input name="stock" type="number" min="0" step="1" value="10" required></label><label class="form-field">Emoji<input name="emoji" maxlength="4" value="✨"></label><button class="primary-button">Add product</button></form></section>`;
+function productModal(product = null) {
+  modalRoot.innerHTML = `<div class="modal-backdrop" data-close-modal></div><section class="modal modal-simple" role="dialog" aria-modal="true"><button class="close-button modal-close" data-close-modal aria-label="Close">×</button><h2>${product ? "Edit product" : "Add something to your shelf"}</h2><form id="product-form" class="checkout-form" ${product ? `data-product-id="${product.id}"` : ""}><label class="form-field">Product name<input name="name" required value="${escape(product?.name || "")}"></label><label class="form-field">Category<input name="category" required value="${escape(product?.category || "")}"></label><label class="form-field">Price (₹)<input name="price" type="number" min="1" step="1" required value="${product?.price || ""}"></label><label class="form-field">Description<input name="details" value="${escape(product?.details || "")}"></label><label class="form-field">Stock<input name="stock" type="number" min="0" step="1" value="${product?.stock ?? 10}" required></label><label class="form-field">Emoji<input name="emoji" maxlength="4" value="${escape(product?.emoji || "✨")}"></label><button class="primary-button">${product ? "Save product" : "Add product"}</button></form></section>`;
 }
 
 function promotionModal() {
@@ -425,6 +452,20 @@ async function onClick(event) {
   if (target.dataset.action === "checkout") { checkoutModal(); return; }
   if (target.dataset.action === "apply-business") { applyBusinessModal(); return; }
   if (target.dataset.action === "add-product") { productModal(); return; }
+  if (target.dataset.editProduct) {
+    const product = (myBusiness()?.products || []).find((item) => item.id === target.dataset.editProduct);
+    if (product) productModal(product);
+    return;
+  }
+  if (target.dataset.deleteProduct) {
+    if (!window.confirm("Remove this product from your catalogue?")) return;
+    const { error } = await supabase.from("products").delete().eq("id", target.dataset.deleteProduct);
+    if (error) throw error;
+    await loadData();
+    render();
+    notify("Product removed from your catalogue.");
+    return;
+  }
   if (target.dataset.action === "add-promotion") { promotionModal(); return; }
   if (target.dataset.action === "edit-profile") { editProfileModal(); return; }
   if (target.dataset.review) {
@@ -635,15 +676,18 @@ async function onSubmit(event) {
   if (form.id === "product-form") {
     event.preventDefault();
     const business = myBusiness();
-    const { error } = await supabase.from("products").insert({
-      business_id: business.id,
+    const productValues = {
       name: values.name.trim(),
       category: values.category.trim(),
       price: Number(values.price),
       details: values.details.trim(),
       stock: Number(values.stock),
       emoji: values.emoji || "✨"
-    });
+    };
+    const query = form.dataset.productId
+      ? supabase.from("products").update(productValues).eq("id", form.dataset.productId)
+      : supabase.from("products").insert({ ...productValues, business_id: business.id });
+    const { error } = await query;
     if (error) throw error;
     modalRoot.innerHTML = "";
     await loadData();
@@ -690,7 +734,11 @@ async function onSubmit(event) {
       description: values.description.trim(),
       offer: values.offer.trim(),
       hours: values.hours.trim(),
-      theme: values.theme
+      category: values.category,
+      branches: values.branches.split(/\r?\n/).map((branch) => branch.trim()).filter(Boolean),
+      theme: values.theme,
+      theme_style: values.theme_style,
+      theme_colors: { accent: values.accent, surface: values.surface, ink: values.ink }
     }).eq("id", myBusiness().id);
     if (error) throw error;
     await loadData();
@@ -769,7 +817,7 @@ function renderStartupError(error) {
   document.body.classList.add("auth-screen");
   const databaseMissing = ["PGRST205", "42P01"].includes(error?.code)
     || /schema cache|relation .* does not exist|could not find the table/i.test(error?.message || "");
-  main.innerHTML = `<section class="setup-message"><span class="setup-icon">${databaseMissing ? "🛠️" : "☁️"}</span><p class="eyebrow">${databaseMissing ? "DATABASE SETUP NEEDED" : "CONNECTION ISSUE"}</p><h1>${databaseMissing ? "Your shops are almost ready" : "We couldn’t connect"}</h1><p>${databaseMissing ? "In Supabase SQL Editor, run the marketplace migration first and the reviews migration next. If your marketplace tables are already installed, run only the reviews migration." : escape(error?.message || "Check your internet connection and Supabase project settings, then try again.")}</p>${databaseMissing ? '<code>supabase/migrations/20261028000000_marketplace.sql</code><code>supabase/migrations/20261028010000_business_reviews.sql</code>' : ""}<button class="primary-button" data-action="retry">Try again</button></section>`;
+  main.innerHTML = `<section class="setup-message"><span class="setup-icon">${databaseMissing ? "🛠️" : "☁️"}</span><p class="eyebrow">${databaseMissing ? "DATABASE SETUP NEEDED" : "CONNECTION ISSUE"}</p><h1>${databaseMissing ? "Your shops are almost ready" : "We couldn’t connect"}</h1><p>${databaseMissing ? "In Supabase SQL Editor, run the marketplace migration first, then reviews and storefront customization. If the marketplace tables are already installed, skip that migration." : escape(error?.message || "Check your internet connection and Supabase project settings, then try again.")}</p>${databaseMissing ? '<code>supabase/migrations/20261028000000_marketplace.sql</code><code>supabase/migrations/20261028010000_business_reviews.sql</code><code>supabase/migrations/20261028020000_storefront_customization.sql</code>' : ""}<button class="primary-button" data-action="retry">Try again</button></section>`;
 }
 
 document.addEventListener("click", (event) => { onClick(event).catch(fail); });
