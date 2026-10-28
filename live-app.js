@@ -38,6 +38,7 @@ let ownerSection = "overview";
 let adminSection = "approvals";
 let adminCategoryBusinessId = "";
 let partnerSection = "deliveries";
+let ownerProductCategory = "";
 let cart = loadCart();
 let guestBrowsing = false;
 let authMode = "sign-in";
@@ -221,7 +222,7 @@ function card(business) {
 function renderHome() {
   const categories = shopCategories.map((entry) => entry.name).slice(0, 6);
   const popular = businesses.filter((business) => business.status === "approved").slice(0, 3);
-  main.innerHTML = `<div class="page-container">${header("Good things grow close to home.", "Find lovely local shops, their latest offers and things to order.")}<section class="hero"><div class="hero-copy"><div class="eyebrow">MEET YOUR NEIGHBOURHOOD</div><h2>Support local. Find something wonderful.</h2><p>Browse nearby businesses and order directly from their catalogues.</p><button class="primary-button" data-page="explore">Explore nearby shops →</button></div><div class="hero-art" aria-hidden="true"><div class="hero-sun"></div><div class="hero-window"></div><span class="hero-cup">☕</span><span class="hero-plant">🪴</span></div></section><div class="section-heading"><div><h2>Shop by category</h2><p>Find the kind of local business you need</p></div><button class="text-button" data-page="explore">Browse shops →</button></div><div class="home-category-grid">${categories.map((name) => `<button class="home-category-card ${categoryClass(name)}" data-category="${escape(name)}"><span class="home-category-icon">${categoryIcon(name)}</span><strong>${escape(name)}</strong><small>${categoryDescription(name)}</small></button>`).join("") || empty("Categories coming soon","Local business categories will appear here.")}</div><div class="section-heading"><div><h2>Local shops nearby</h2><p>Neighbourhood businesses</p></div><button class="text-button" data-page="explore">See all shops →</button></div><div class="business-grid">${popular.map(card).join("") || `<div class="empty-state" style="grid-column:1/-1"><span>🏡</span><strong>No local businesses yet</strong><p>Register your business or check back when local shops join.</p>${session && profile?.role === "customer" ? '<button class="primary-button" data-action="apply-business">Register your business</button>' : !session ? '<button class="primary-button" data-action="sign-in">Sign in to register your business</button>' : ""}</div>`}</div><div class="section-heading"><div><h2>A little love from local</h2><p>Offers approved by neighbourhood administrators</p></div></div><div class="feed-layout"><div>${ads.filter((ad) => ad.status === "live").slice(0, 3).map((ad) => `<article class="update-card"><div class="update-avatar">📣</div><div class="update-content"><strong>${escape(shopById(ad.business_id)?.name || "Local shop")}</strong><small>Approved neighbourhood offer</small><p><strong>${escape(ad.title)}</strong><br>${escape(ad.message)}</p></div></article>`).join("") || empty("No live offers","Check back for new neighbourhood promotions.")}</div></div></div>`;
+  main.innerHTML = `<div class="page-container">${header("Good things grow close to home.", "Find lovely local shops, their latest offers and things to order.")}<section class="hero"><div class="hero-copy"><div class="eyebrow">MEET YOUR NEIGHBOURHOOD</div><h2>Support local. Find something wonderful.</h2><p>Browse nearby businesses and order directly from their catalogues.</p><button class="primary-button" data-page="explore">Explore nearby shops →</button></div><div class="hero-art" aria-hidden="true"><div class="hero-sun"></div><div class="hero-window"></div><span class="hero-cup">☕</span><span class="hero-plant">🪴</span></div></section><div class="section-heading"><div><h2>Shop by category</h2><p>Find the kind of local business you need</p></div><button class="text-button" data-page="explore">Browse shops →</button></div><div class="home-category-grid">${categories.map((name) => `<button class="home-category-card ${categoryClass(name)}" data-category="${escape(name)}"><span class="home-category-icon">${categoryIcon(name)}</span><strong>${escape(name)}</strong><small>${categoryDescription(name)}</small></button>`).join("") || empty("Categories coming soon","Local business categories will appear here.")}</div><div class="section-heading"><div><h2>Local shops nearby</h2><p>Neighbourhood businesses</p></div><button class="text-button" data-page="explore">See all shops →</button></div><div class="business-grid">${popular.map(card).join("") || `<div class="empty-state" style="grid-column:1/-1"><span>🏡</span><strong>No local businesses yet</strong><p>Register your business or check back when local shops join.</p>${session && profile?.role === "customer" ? '<button class="primary-button" data-action="apply-business">Register your business</button>' : !session ? '<button class="primary-button" data-action="sign-in">Sign in to register your business</button>' : ""}</div>`}</div><div class="section-heading"><div><h2>A little love from local</h2><p>Offers approved by neighbourhood administrators</p></div></div><div class="feed-layout"><div>${ads.filter((ad) => ad.status === "live").slice(0, 3).map((ad) => `<article class="update-card"><div class="update-avatar">📣</div><div class="update-content"><strong>${escape(shopById(ad.business_id)?.name || "Local shop")}</strong><small>Approved neighbourhood offer</small><p><strong>${escape(ad.title)}</strong><br>${escape(ad.message)}</p>${ad.link_url ? `<a class="ad-link" href="${escape(ad.link_url)}" target="_blank" rel="noopener noreferrer">Visit promotion →</a>` : ""}</div></article>`).join("") || empty("No live offers","Check back for new neighbourhood promotions.")}</div></div></div>`;
 }
 
 function visibleBusinesses() {
@@ -270,7 +271,17 @@ function renderShop() {
   const categoryControls = categories.length || business.offer
     ? `<div class="catalog-categories">${business.offer ? `<button class="catalog-chip ${selectedCatalogCategory === "Offers" ? "active" : ""}" data-catalog-category="Offers">✦ Offers</button>` : ""}${categories.map((item) => `<button class="catalog-chip ${selectedCatalogCategory === item ? "active" : ""}" data-catalog-category="${escape(item)}">${escape(item)}</button>`).join("")}${selectedCatalogCategory ? `<button class="catalog-chip catalog-clear-filter" data-catalog-category="">Clear filter</button>` : ""}</div>`
     : "";
-  main.innerHTML = `<div class="page-container shop-page" style="--shop-accent:${accent};--shop-pale:${pale};--shop-soft:${pale};--shop-ink:${ink}"><button class="shop-back-button" data-page="explore">← <span>Back to explore</span></button><section class="store-hero">${business.image_url ? `<img class="store-cover-photo" src="${escape(business.image_url)}" alt="">` : ""}<span class="store-cover-shade"></span><div class="store-identity"><span class="store-logo">${business.category === "Groceries" ? "🥬" : business.category === "Stationery" ? "📚" : "☕"}</span><div><span class="store-category">${escape(business.category)}</span><h1>${escape(business.name)} ${business.verified ? '<span class="verified">✓</span>' : ""}</h1><p>${escape(business.handle)} <span>·</span> <strong>★ ${Number(business.rating) > 0 ? Number(business.rating).toFixed(1) : "New"}</strong> <span>(${business.reviews || 0} reviews)</span></p></div></div><button class="store-follow ${follows.includes(business.id) ? "following" : ""}" data-follow="${business.id}" aria-pressed="${follows.includes(business.id)}">${follows.includes(business.id) ? "♥ Following" : "♡ Follow shop"}</button></section><div class="store-meta"><span>⌖ ${escape(business.branches?.join(" · ") || "Indiranagar")}</span><span>◷ ${escape(business.hours || "Opening hours not listed")}</span><span>Pickup · Local delivery</span></div><section class="store-welcome"><div><small>WELCOME TO OUR SHOP</small><p>${escape(business.description)}</p></div></section>${business.offer ? `<button class="store-offer" data-catalog-category="Offers"><span>✦ NEIGHBOURHOOD OFFER</span><strong>${escape(business.offer)}</strong><small>Tap to see the offer</small></button>` : ""}<div class="section-heading store-catalog-heading"><div><h2>Shop the catalogue</h2><p>Choose a category or browse everything</p></div><span class="store-product-count">${products.length} items</span></div>${categoryControls}<div class="catalog-grid">${shown.map((product) => `<article class="catalog-product"><div class="catalog-product-art">${product.image_url ? `<img src="${escape(product.image_url)}" alt="${escape(product.name)}">` : `<span>${escape(product.emoji || "✨")}</span>`}${product.offer ? `<b>${escape(product.offer)}</b>` : ""}</div><div class="catalog-product-copy"><small>${escape(product.category)}</small><strong>${escape(product.name)}</strong><p>${escape(product.details)}</p><div class="catalog-product-buy"><strong>${money(product.price)}</strong><button class="catalog-add" data-add="${product.id}" ${product.stock <= 0 ? "disabled" : ""}>${product.stock > 0 ? "＋ Add" : "Sold out"}</button></div></div></article>`).join("") || productEmpty}</div><section class="store-details-panel"><div><small>VISIT US</small><strong>${escape(business.branches?.join(" · ") || "Indiranagar")}</strong></div><div><small>OPENING HOURS</small><strong>${escape(business.hours || "Please contact the shop")}</strong></div><div><small>ORDER OPTIONS</small><strong>Pickup and local delivery</strong></div></section><section class="store-reviews"><div class="store-reviews-heading"><div><small>NEIGHBOURHOOD NOTES</small><h2>Ratings & reviews</h2><p>What people think about this shop</p></div>${reviewAction}</div><div class="store-review-list">${reviewCards || `<p class="review-empty">No ratings yet. Be the first to share your experience.</p>`}</div></section></div>`;
+  const catalogGroupNames = selectedCatalogCategory ? [selectedCatalogCategory] : categories;
+  const catalogCard = (product) => `<article class="catalog-product"><div class="catalog-product-art">${product.image_url ? `<img src="${escape(product.image_url)}" alt="${escape(product.name)}">` : `<span>${escape(product.emoji || "✨")}</span>`}${product.offer ? `<b>${escape(product.offer)}</b>` : ""}</div><div class="catalog-product-copy"><small>${escape(product.category)}</small><strong>${escape(product.name)}</strong><p>${escape(product.details)}</p><div class="catalog-product-buy"><strong>${money(product.price)}</strong><button class="catalog-add" data-add="${product.id}" ${product.stock <= 0 ? "disabled" : ""}>${product.stock > 0 ? "＋ Add" : "Sold out"}</button></div></div></article>`;
+  const catalogSections = products.length
+    ? catalogGroupNames.map((name) => {
+      const entries = shown.filter((product) => selectedCatalogCategory ? true : product.category === name);
+      return entries.length
+        ? `<section class="catalog-category-section"><div class="catalog-category-heading"><h3>${escape(name)}</h3><span>${entries.length} ${entries.length === 1 ? "item" : "items"}</span></div><div class="catalog-grid">${entries.map(catalogCard).join("")}</div></section>`
+        : "";
+    }).join("") || productEmpty
+    : productEmpty;
+  main.innerHTML = `<div class="page-container shop-page" style="--shop-accent:${accent};--shop-pale:${pale};--shop-soft:${pale};--shop-ink:${ink}"><button class="shop-back-button" data-page="explore">← <span>Back to explore</span></button><section class="store-hero">${business.image_url ? `<img class="store-cover-photo" src="${escape(business.image_url)}" alt="">` : ""}<span class="store-cover-shade"></span><div class="store-identity"><span class="store-logo">${business.category === "Groceries" ? "🥬" : business.category === "Stationery" ? "📚" : "☕"}</span><div><span class="store-category">${escape(business.category)}</span><h1>${escape(business.name)} ${business.verified ? '<span class="verified">✓</span>' : ""}</h1><p>${escape(business.handle)} <span>·</span> <strong>★ ${Number(business.rating) > 0 ? Number(business.rating).toFixed(1) : "New"}</strong> <span>(${business.reviews || 0} reviews)</span></p></div></div><button class="store-follow ${follows.includes(business.id) ? "following" : ""}" data-follow="${business.id}" aria-pressed="${follows.includes(business.id)}">${follows.includes(business.id) ? "♥ Following" : "♡ Follow shop"}</button></section><div class="store-meta"><span>⌖ ${escape(business.branches?.join(" · ") || "Indiranagar")}</span><span>◷ ${escape(business.hours || "Opening hours not listed")}</span><span>Pickup · Local delivery</span></div><section class="store-welcome"><div><small>WELCOME TO OUR SHOP</small><p>${escape(business.description)}</p></div></section>${business.offer ? `<button class="store-offer" data-catalog-category="Offers"><span>✦ NEIGHBOURHOOD OFFER</span><strong>${escape(business.offer)}</strong><small>Tap to see the offer</small></button>` : ""}<div class="section-heading store-catalog-heading"><div><h2>Shop the catalogue</h2><p>Choose a category or browse everything</p></div><span class="store-product-count">${products.length} items</span></div>${categoryControls}<div class="catalog-sections">${catalogSections}</div><section class="store-details-panel"><div><small>VISIT US</small><strong>${escape(business.branches?.join(" · ") || "Indiranagar")}</strong></div><div><small>OPENING HOURS</small><strong>${escape(business.hours || "Please contact the shop")}</strong></div><div><small>ORDER OPTIONS</small><strong>Pickup and local delivery</strong></div></section><section class="store-reviews"><div class="store-reviews-heading"><div><small>NEIGHBOURHOOD NOTES</small><h2>Ratings & reviews</h2><p>What people think about this shop</p></div>${reviewAction}</div><div class="store-review-list">${reviewCards || `<p class="review-empty">No ratings yet. Be the first to share your experience.</p>`}</div></section><footer class="storefront-footer"><span>${escape(business.name)} · ${escape(business.handle)}</span><button class="shop-back-button" data-page="explore">← Back to local shops</button></footer></div>`;
 }
 
 function renderProfile() {
@@ -397,17 +408,35 @@ function renderBusiness() {
     const shopOrders = orders.filter((order) => order.business_id === business.id);
     main.innerHTML = `<div class="page-container">${header("Orders from your neighbours","Confirm requests and keep customers in the loop.","BUSINESS WORKSPACE")}<div class="workspace-tabs">${ownerTabs()}</div><section class="dashboard-panel">${shopOrders.map((order) => orderCard(order, true)).join("") || empty("No orders yet","Customer orders will appear here.")}</section></div>`;
   } else if (ownerSection === "products") {
-    main.innerHTML = `<div class="page-container">${header("Your product shelf","Manage products and the categories neighbours can browse.","BUSINESS WORKSPACE")}<div class="workspace-tabs">${ownerTabs()}</div><div class="owner-product-actions"><button class="primary-button" data-action="add-product">＋ Add a product</button><form id="category-form" class="category-create-form"><label class="form-field">New category<input name="name" maxlength="50" required placeholder="e.g. Seasonal specials"></label><button class="secondary-button">Add category</button></form></div><section class="owner-category-list">${businessCategories.filter((entry) => entry.business_id === business.id).map((entry) => `<span class="owner-category-chip">${escape(entry.name)}<button data-delete-category="${entry.id}" aria-label="Delete ${escape(entry.name)} category">×</button></span>`).join("") || `<small>No categories yet. Add one before creating products.</small>`}</section><section class="dashboard-panel">${(business.products || []).map((product) => `<div class="product-management-row"><div class="product-management-name">${product.image_url ? `<img class="product-management-photo" src="${escape(product.image_url)}" alt="">` : `<span>${escape(product.emoji || "✨")}</span>`}${escape(product.name)} <small>${escape(product.category)}</small></div><strong>${money(product.price)}</strong><span class="stock-state ${product.stock <= 0 ? "out" : ""}">${product.stock} in stock</span><div class="product-management-actions"><button class="small-button" data-edit-product="${product.id}">Edit</button><button class="small-button" data-delete-product="${product.id}">Remove</button><button class="small-button" data-stock="${product.id}" data-stock-value="${product.stock}">${product.stock > 0 ? "Mark unavailable" : "Restock"}</button></div></div>`).join("") || empty("No products yet","Add your first product to the catalogue.")}</section></div>`;
+    main.innerHTML = `<div class="page-container">${header("Your product shelf","Keep products organized into categories customers can browse.","BUSINESS WORKSPACE")}<div class="workspace-tabs">${ownerTabs()}</div>${renderOwnerProducts(business)}</div>`;
   } else if (ownerSection === "storefront") {
     const colors = businessThemeColors(business);
     main.innerHTML = `<div class="page-container">${header("Shop appearance","Preview storefront changes as you make them.","BUSINESS WORKSPACE")}<div class="workspace-tabs">${ownerTabs()}</div><section class="storefront-live-preview" data-storefront-preview><span class="storefront-preview-label">LIVE SHOP PREVIEW</span><div class="storefront-preview-cover"><img data-preview-image alt="" hidden><span data-preview-icon>${categoryIcon(business.category)}</span></div><div class="storefront-preview-copy"><small data-preview-category>${escape(business.category)}</small><h2 data-preview-name>${escape(business.name)}</h2><p data-preview-description>${escape(business.description)}</p><span data-preview-branches>${escape(business.branches?.[0] || "Add a branch")}</span></div></section><section class="dashboard-panel storefront-settings"><form id="storefront-form" class="checkout-form" data-storefront-live><label class="form-field">Business display name<input name="name" required value="${escape(business.name)}"></label><label class="form-field">Shop ID / handle<input name="handle" required value="${escape(business.handle)}"></label><label class="form-field">Category<select name="category">${shopCategories.map(({ name }) => `<option ${business.category === name ? "selected" : ""}>${escape(name)}</option>`).join("")}</select></label><label class="form-field">Short description<input name="description" required value="${escape(business.description)}"></label><label class="form-field">Public storefront image URL<input name="image_url" type="url" value="${escape(business.image_url || "")}" placeholder="https://..."></label><label class="form-field">Or upload a storefront image<input name="image_file" type="file" accept="image/jpeg,image/png,image/gif,image/webp"><small>JPG, PNG, GIF or WebP; maximum 5 MB.</small></label><label class="form-field">Neighbourhood offer<input name="offer" value="${escape(business.offer)}"></label><label class="form-field">Opening hours<input name="hours" value="${escape(business.hours)}"></label><label class="form-field">Branches (one per line)<textarea name="branches" rows="3" required>${escape((business.branches || []).join("\n"))}</textarea></label><label class="form-field">Store theme<select name="theme"><option value="coffee" ${business.theme === "coffee" ? "selected" : ""}>Coffee brown</option><option value="green" ${business.theme === "green" ? "selected" : ""}>Fresh green</option><option value="maroon" ${business.theme === "maroon" ? "selected" : ""}>Stationery maroon</option></select></label><label class="form-field">Storefront finish<select name="theme_style"><option value="solid" ${business.theme_style === "solid" ? "selected" : ""}>Solid</option><option value="gradient" ${business.theme_style === "gradient" ? "selected" : ""}>Gradient</option><option value="glass" ${business.theme_style === "glass" ? "selected" : ""}>Glass</option></select></label><div class="theme-color-fields"><label>Accent<input type="color" name="accent" value="${colors.accent}"></label><label>Surface<input type="color" name="surface" value="${colors.surface}"></label><label>Text<input type="color" name="ink" value="${colors.ink}"></label></div><button class="primary-button">Save storefront preferences</button></form></section></div>`;
     updateStorefrontPreview(main.querySelector("#storefront-form"));
   } else if (ownerSection === "ads") {
-    main.innerHTML = `<div class="page-container">${header("Tell the neighbourhood","Promotions need administrator approval before they appear publicly.","BUSINESS WORKSPACE")}<div class="workspace-tabs">${ownerTabs()}</div><button class="primary-button" data-action="add-promotion">＋ Create promotion</button><section class="dashboard-panel">${ads.filter((ad) => ad.business_id === business.id).map(adCard).join("") || empty("No promotions yet","Create one to tell the neighbourhood what’s new.")}</section></div>`;
+    main.innerHTML = `<div class="page-container">${header("Tell the neighbourhood","Promotions need administrator approval before they appear publicly.","BUSINESS WORKSPACE")}<div class="workspace-tabs">${ownerTabs()}</div><button class="primary-button" data-action="add-promotion">＋ Create promotion</button><section class="dashboard-panel">${ads.filter((ad) => ad.business_id === business.id).map((ad) => adCard(ad, false, true)).join("") || empty("No promotions yet","Create one to tell the neighbourhood what’s new.")}</section></div>`;
   } else {
     const shopOrders = orders.filter((order) => order.business_id === business.id);
     main.innerHTML = `<div class="page-container">${header(`${business.name} at a glance`,"Manage incoming orders, your product shelf and local promotions.","BUSINESS WORKSPACE")}<div class="workspace-tabs">${ownerTabs()}</div><div class="owner-stats"><div class="stat-card"><small>Orders</small><strong>${shopOrders.length}</strong></div><div class="stat-card"><small>Needs confirmation</small><strong>${shopOrders.filter((order) => order.status === "New").length}</strong></div><div class="stat-card"><small>Products</small><strong>${business.products?.length || 0}</strong></div><div class="stat-card"><small>Promotions</small><strong>${ads.filter((ad) => ad.business_id === business.id).length}</strong></div></div><section class="dashboard-panel">${shopOrders.filter((order) => order.status === "New").map((order) => orderCard(order, true)).join("") || empty("No new requests","Incoming customer orders will appear here.")}</section></div>`;
   }
+}
+
+function renderOwnerProducts(business) {
+  const products = business.products || [];
+  const categoryNames = [...new Set([...(business.categories || []), ...products.map((product) => product.category)])]
+    .sort((a, b) => a.localeCompare(b));
+  const categoryCount = (name) => products.filter((product) => product.category === name).length;
+  const categoryFilters = [
+    `<button class="owner-product-filter ${ownerProductCategory === "" ? "active" : ""}" data-owner-product-category="">All <span>${products.length}</span></button>`,
+    ...categoryNames.map((name) => `<button class="owner-product-filter ${ownerProductCategory === name ? "active" : ""}" data-owner-product-category="${escape(name)}">${escape(name)} <span>${categoryCount(name)}</span></button>`)
+  ].join("");
+  const sections = categoryNames
+    .filter((name) => !ownerProductCategory || ownerProductCategory === name)
+    .map((name) => {
+      const entries = products.filter((product) => product.category === name);
+      return `<section class="owner-product-group" data-owner-product-group><div class="owner-product-group-heading"><div><span class="eyebrow">${escape(name)}</span><h2>${entries.length} ${entries.length === 1 ? "product" : "products"}</h2></div><button class="small-button" data-action="add-product" data-product-category="${escape(name)}">＋ Add to ${escape(name)}</button></div><div class="owner-product-grid">${entries.map((product) => `<article class="owner-product-card" data-owner-product-card data-search="${escape(`${product.name} ${product.category} ${product.details || ""}`.toLocaleLowerCase())}"><div class="owner-product-card-art">${product.image_url ? `<img src="${escape(product.image_url)}" alt="">` : `<span>${escape(product.emoji || "✨")}</span>`}${product.offer ? `<b>${escape(product.offer)}</b>` : ""}</div><div class="owner-product-card-copy"><div class="owner-product-card-heading"><h3>${escape(product.name)}</h3><span class="stock-state ${product.stock <= 0 ? "out" : ""}">${product.stock > 0 ? `${product.stock} in stock` : "Unavailable"}</span></div><p>${escape(product.details || "No description added yet.")}</p><div class="owner-product-card-footer"><strong>${money(product.price)}</strong><div class="product-management-actions"><button class="small-button" data-edit-product="${product.id}">Edit</button><button class="small-button" data-stock="${product.id}" data-stock-value="${product.stock}">${product.stock > 0 ? "Set unavailable" : "Restock"}</button><button class="small-button owner-product-remove" data-delete-product="${product.id}">Remove</button></div></div></div></article>`).join("") || `<div class="owner-category-empty">No products in this category yet. Add one to start filling the shelf.</div>`}</div></section>`;
+    }).join("");
+  return `<section class="owner-product-toolbar"><div class="owner-product-toolbar-copy"><strong>${products.length} ${products.length === 1 ? "product" : "products"}</strong><span>Organized by product category</span></div><button class="primary-button" data-action="add-product">＋ Add product</button><label class="owner-product-search"><span aria-hidden="true">⌕</span><input type="search" data-owner-product-search placeholder="Search your products" aria-label="Search products"></label></section><nav class="owner-product-filters" aria-label="Filter products by category">${categoryFilters}</nav><details class="owner-category-manager" ${categoryNames.length ? "" : "open"}><summary><span>Manage product categories</span><small>${categoryNames.length} ${categoryNames.length === 1 ? "category" : "categories"}</small></summary><div class="owner-category-manager-content"><form id="category-form" class="category-create-form"><label class="form-field">Add a category<input name="name" maxlength="50" required placeholder="e.g. Seasonal specials"></label><button class="secondary-button">Add category</button></form><div class="owner-category-list">${businessCategories.filter((entry) => entry.business_id === business.id).map((entry) => `<span class="owner-category-chip">${escape(entry.name)}<button data-delete-category="${entry.id}" aria-label="Delete ${escape(entry.name)} category">×</button></span>`).join("") || `<small>No custom categories yet. Product categories will still be shown from the items you add.</small>`}</div></div></details><div class="owner-product-groups">${sections || empty("No products yet","Add your first product, then choose a category to organize your catalogue.")}<div class="owner-product-search-empty" hidden>${empty("No matching products","Try another name or category.")}</div></div>`;
 }
 
 function ownerTabs() {
@@ -415,8 +444,9 @@ function ownerTabs() {
     .map(([key,label]) => `<button class="workspace-tab ${ownerSection === key ? "active" : ""}" data-owner-section="${key}">${label}</button>`).join("");
 }
 
-function adCard(ad, admin = false) {
-  return `<div class="ad-listing"><span class="admin-business-icon">📣</span><span class="ad-listing-copy"><strong>${escape(ad.title)}</strong><small>${escape(shopById(ad.business_id)?.name || "Local business")} · ${escape(ad.message)}</small></span><span class="ad-status ${escape(ad.status)}">${escape(ad.status)}</span>${admin && ad.status === "pending" ? `<button class="small-button blue" data-ad-status="${ad.id}" data-next-status="live">Make live</button>` : ""}${admin && ad.status === "live" ? `<button class="small-button" data-ad-status="${ad.id}" data-next-status="paused">Pause</button>` : ""}</div>`;
+function adCard(ad, admin = false, owner = false) {
+  const link = ad.link_url ? `<a class="ad-link" href="${escape(ad.link_url)}" target="_blank" rel="noopener noreferrer">Visit promotion →</a>` : "";
+  return `<div class="ad-listing"><span class="admin-business-icon">📣</span><span class="ad-listing-copy"><strong>${escape(ad.title)}</strong><small>${escape(shopById(ad.business_id)?.name || "Local business")} · ${escape(ad.message)}</small>${link}</span><span class="ad-status ${escape(ad.status)}">${escape(ad.status)}</span>${owner && ad.status === "pending" ? `<button class="small-button" data-edit-ad="${ad.id}">Edit</button>` : ""}${admin && ad.status === "pending" ? `<button class="small-button blue" data-ad-status="${ad.id}" data-next-status="live">Make live</button>` : ""}${admin && ad.status === "live" ? `<button class="small-button" data-ad-status="${ad.id}" data-next-status="paused">Pause</button>` : ""}</div>`;
 }
 
 function renderAdmin() {
@@ -551,13 +581,14 @@ function applyBusinessModal() {
   modalRoot.innerHTML = `<div class="modal-backdrop" data-close-modal></div><section class="modal modal-simple" role="dialog" aria-modal="true"><button class="close-button modal-close" data-close-modal aria-label="Close">×</button><h2>Apply to join the neighbourhood</h2><p>An administrator reviews each new business before it appears publicly.</p><form id="business-form" class="checkout-form"><label class="form-field">Business name<input name="name" required></label><label class="form-field">Shop handle<input name="handle" required placeholder="@yourshop"></label><label class="form-field">Category<select name="category" required>${shopCategories.map(({ name }) => `<option>${escape(name)}</option>`).join("")}</select></label><label class="form-field">Description<input name="description" required maxlength="250"></label><label class="form-field">Public storefront image URL (optional)<input name="image_url" type="url" placeholder="https://..."></label><label class="form-field">Branch / address<input name="branch" required></label><label class="form-field">Opening hours<input name="hours"></label><button class="primary-button">Submit for review</button></form></section>`;
 }
 
-function productModal(product = null) {
+function productModal(product = null, defaultCategory = "") {
   const categories = myBusiness()?.categories || [];
-  modalRoot.innerHTML = `<div class="modal-backdrop" data-close-modal></div><section class="modal modal-simple" role="dialog" aria-modal="true"><button class="close-button modal-close" data-close-modal aria-label="Close">×</button><h2>${product ? "Edit product" : "Add something to your shelf"}</h2>${categories.length ? "" : `<p>Add a category on your product shelf before adding products.</p>`}<form id="product-form" class="checkout-form" ${product ? `data-product-id="${product.id}"` : ""}><label class="form-field">Product name<input name="name" required value="${escape(product?.name || "")}"></label><label class="form-field">Category<select name="category" required><option value="">Choose a category</option>${categories.map((name) => `<option ${product?.category === name ? "selected" : ""}>${escape(name)}</option>`).join("")}</select></label><label class="form-field">Price (₹)<input name="price" type="number" min="1" step="1" required value="${product?.price || ""}"></label><label class="form-field">Description<input name="details" value="${escape(product?.details || "")}"></label><label class="form-field">Stock<input name="stock" type="number" min="0" step="1" value="${product?.stock ?? 10}" required></label><label class="form-field">Emoji<input name="emoji" maxlength="4" value="${escape(product?.emoji || "✨")}"></label><label class="form-field">Product image URL<input name="image_url" type="url" value="${escape(product?.image_url || "")}" placeholder="https://..."></label><label class="form-field">Or upload a product image<input name="image_file" type="file" accept="image/jpeg,image/png,image/gif,image/webp"><small>JPG, PNG, GIF or WebP; maximum 5 MB.</small></label><button class="primary-button" ${categories.length ? "" : "disabled"}>${product ? "Save product" : "Add product"}</button></form></section>`;
+  const selectedCategory = product?.category || defaultCategory;
+  modalRoot.innerHTML = `<div class="modal-backdrop" data-close-modal></div><section class="modal modal-simple" role="dialog" aria-modal="true"><button class="close-button modal-close" data-close-modal aria-label="Close">×</button><h2>${product ? "Edit product" : "Add a product"}</h2>${categories.length ? `<p>Add the details once and customers will see it under the selected category.</p>` : `<p>Create a product category first to organize your catalogue.</p>`}<form id="product-form" class="checkout-form" ${product ? `data-product-id="${product.id}"` : ""}><label class="form-field">Product name<input name="name" required value="${escape(product?.name || "")}"></label><label class="form-field">Category<select name="category" required><option value="">Choose a category</option>${categories.map((name) => `<option ${selectedCategory === name ? "selected" : ""}>${escape(name)}</option>`).join("")}</select></label><label class="form-field">Price (₹)<input name="price" type="number" min="1" step="1" required value="${product?.price || ""}"></label><label class="form-field">Description<input name="details" value="${escape(product?.details || "")}"></label><label class="form-field">Stock quantity<input name="stock" type="number" min="0" step="1" value="${product?.stock ?? 10}" required></label><label class="form-field">Product image URL<input name="image_url" type="url" value="${escape(product?.image_url || "")}" placeholder="https://..."></label><label class="form-field">Or upload a product image<input name="image_file" type="file" accept="image/jpeg,image/png,image/gif,image/webp"><small>JPG, PNG, GIF or WebP; maximum 5 MB.</small></label><button class="primary-button" ${categories.length ? "" : "disabled"}>${product ? "Save changes" : "Add product"}</button></form></section>`;
 }
 
-function promotionModal() {
-  modalRoot.innerHTML = `<div class="modal-backdrop" data-close-modal></div><section class="modal modal-simple" role="dialog" aria-modal="true"><button class="close-button modal-close" data-close-modal aria-label="Close">×</button><h2>Create a local promotion</h2><p>An administrator must approve it before it appears in the feed.</p><form id="promotion-form" class="checkout-form"><label class="form-field">Promotion title<input name="title" maxlength="70" required></label><label class="form-field">Short message<input name="message" maxlength="150" required></label><button class="primary-button">Submit for review</button></form></section>`;
+function promotionModal(ad = null) {
+  modalRoot.innerHTML = `<div class="modal-backdrop" data-close-modal></div><section class="modal modal-simple" role="dialog" aria-modal="true"><button class="close-button modal-close" data-close-modal aria-label="Close">×</button><h2>${ad ? "Edit your promotion" : "Create a local promotion"}</h2><p>${ad ? "Update the promotion details and link. It will remain pending review." : "An administrator must approve it before it appears in the feed."}</p><form id="promotion-form" class="checkout-form" ${ad ? `data-ad-id="${ad.id}"` : ""}><label class="form-field">Promotion title<input name="title" maxlength="70" required value="${escape(ad?.title || "")}"></label><label class="form-field">Short message<input name="message" maxlength="150" required value="${escape(ad?.message || "")}"></label><label class="form-field">Promotion link (optional)<input name="link_url" type="url" maxlength="500" value="${escape(ad?.link_url || "")}" placeholder="https://your-business.com"><small>Customers can open this link from the promotion.</small></label><button class="primary-button">${ad ? "Save changes" : "Submit for review"}</button></form></section>`;
 }
 
 function editProfileModal() {
@@ -590,6 +621,21 @@ function validateImageUrl(value) {
   }
   if (!["http:", "https:"].includes(parsed.protocol)) {
     throw new Error("Image URLs must start with http:// or https://.");
+  }
+  return parsed.href;
+}
+
+function validatePromotionUrl(value) {
+  const linkUrl = String(value || "").trim();
+  if (!linkUrl) return "";
+  let parsed;
+  try {
+    parsed = new URL(linkUrl);
+  } catch {
+    throw new Error("Enter a valid promotion URL.");
+  }
+  if (!["http:", "https:"].includes(parsed.protocol)) {
+    throw new Error("Promotion links must start with http:// or https://.");
   }
   return parsed.href;
 }
@@ -655,7 +701,12 @@ async function onClick(event) {
   if (target.dataset.action === "checkout") { checkoutModal(); return; }
   if (target.dataset.action === "apply-business") { applyBusinessModal(); return; }
   if (target.dataset.action === "apply-delivery-partner") { partnerApplicationModal(); return; }
-  if (target.dataset.action === "add-product") { productModal(); return; }
+  if (target.dataset.ownerProductCategory !== undefined) {
+    ownerProductCategory = target.dataset.ownerProductCategory;
+    render();
+    return;
+  }
+  if (target.dataset.action === "add-product") { productModal(null, target.dataset.productCategory || ""); return; }
   if (target.dataset.editProduct) {
     const product = (myBusiness()?.products || []).find((item) => item.id === target.dataset.editProduct);
     if (product) productModal(product);
@@ -671,6 +722,11 @@ async function onClick(event) {
     return;
   }
   if (target.dataset.action === "add-promotion") { promotionModal(); return; }
+  if (target.dataset.editAd) {
+    const ad = ads.find((entry) => entry.id === target.dataset.editAd && entry.business_id === myBusiness()?.id);
+    if (ad?.status === "pending") promotionModal(ad);
+    return;
+  }
   if (target.dataset.action === "edit-profile") { editProfileModal(); return; }
   if (target.dataset.review) {
     if (!session) {
@@ -1036,17 +1092,20 @@ async function onSubmit(event) {
   }
   if (form.id === "promotion-form") {
     event.preventDefault();
-    const { error } = await supabase.from("ads").insert({
-      business_id: myBusiness().id,
+    const promotion = {
       title: values.title.trim(),
       message: values.message.trim(),
-      status: "pending"
-    });
+      link_url: validatePromotionUrl(values.link_url)
+    };
+    const query = form.dataset.adId
+      ? supabase.from("ads").update(promotion).eq("id", form.dataset.adId).eq("business_id", myBusiness().id)
+      : supabase.from("ads").insert({ ...promotion, business_id: myBusiness().id, status: "pending" });
+    const { error } = await query;
     if (error) throw error;
     modalRoot.innerHTML = "";
     await loadData();
     render();
-    notify("Promotion submitted for administrator review.");
+    notify(form.dataset.adId ? "Promotion changes saved for review." : "Promotion submitted for administrator review.");
     return;
   }
   if (form.id === "review-form") {
@@ -1237,6 +1296,22 @@ function setupRealtime() {
 document.addEventListener("input", (event) => {
   const form = event.target.form;
   if (form?.hasAttribute("data-storefront-live")) updateStorefrontPreview(form);
+  if (event.target.matches("[data-owner-product-search]")) {
+    const query = event.target.value.trim().toLocaleLowerCase();
+    let visibleProducts = 0;
+    main.querySelectorAll("[data-owner-product-group]").forEach((group) => {
+      let groupVisible = 0;
+      group.querySelectorAll("[data-owner-product-card]").forEach((card) => {
+        const visible = card.dataset.search.includes(query);
+        card.hidden = !visible;
+        if (visible) groupVisible++;
+      });
+      group.hidden = query !== "" && groupVisible === 0;
+      visibleProducts += groupVisible;
+    });
+    const noMatches = main.querySelector(".owner-product-search-empty");
+    if (noMatches) noMatches.hidden = query === "" || visibleProducts > 0;
+  }
 });
 document.addEventListener("change", (event) => {
   const form = event.target.form;
