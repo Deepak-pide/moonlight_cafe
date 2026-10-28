@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { playUiSound, setSoundsEnabled, soundsEnabled } from "./sounds.js";
+import { playUiSound } from "./sounds.js";
 
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
@@ -241,6 +241,11 @@ function renderExplore() {
   main.innerHTML = `<div class="page-container">${header("Explore local shops", "Choose a category to find neighbourhood favourites.")}<div class="explore-category-grid">${shopCategories.map(({ name }) => `<button class="explore-category-card ${categoryClass(name)} ${category === name ? "active" : ""}" data-category="${escape(name)}"><span>${categoryIcon(name)}</span><strong>${escape(name)}</strong></button>`).join("")}</div><div class="section-heading" style="margin-top:26px"><div><h2>${category ? `${escape(category)} shops` : "All shops nearby"}</h2><p>${results.length} businesses</p></div>${category ? '<button class="text-button" data-clear-category>Clear filter →</button>' : ""}</div><div class="business-grid">${results.map(card).join("") || emptyResults}</div></div>`;
 }
 
+function renderCategory() {
+  const results = visibleBusinesses();
+  main.innerHTML = `<div class="page-container category-page">${header(category, `Local ${category.toLocaleLowerCase()} businesses nearby.`)}<button class="text-button category-back" data-page="home">← All categories</button><div class="business-grid">${results.map(card).join("") || empty("No shops in this category yet","Check back soon for local businesses.")}</div></div>`;
+}
+
 function renderShop() {
   const business = shopById(selectedShopId);
   if (!business) {
@@ -251,14 +256,9 @@ function renderShop() {
   const [accent, pale, ink] = themeValues[business.theme] || themeValues.coffee;
   const products = business.products || [];
   const categories = business.categories || [...new Set(products.map((product) => product.category))];
-  const shown = !selectedCatalogCategory
-    ? products
-    : selectedCatalogCategory === "Offers"
-      ? products.filter((product) => product.offer || business.offer)
-      : products.filter((product) => product.category === selectedCatalogCategory);
   const productEmpty = products.length === 0
     ? `<div class="empty-state" style="grid-column:1/-1"><span>🛍️</span><strong>This shop hasn’t added products yet</strong><p>Check back soon to see what’s on the shelf.</p></div>`
-    : empty("No items in this category","Choose another catalogue category.");
+    : empty("No items in this category","Choose another category.");
   const businessReviews = reviews.filter((review) => review.business_id === business.id);
   const canReview = profile?.role === "customer" && business.owner_id !== session?.user?.id;
   const myReview = businessReviews.find((review) => review.customer_id === session?.user?.id);
@@ -268,20 +268,21 @@ function renderShop() {
       ? `<button class="secondary-button" data-action="sign-in">Sign in to rate this shop</button>`
       : "";
   const reviewCards = businessReviews.map((review) => `<article class="review-card"><div class="review-card-heading"><strong>${review.customer_id === session?.user?.id ? "Your review" : "Neighbour"}</strong><span>${"★".repeat(review.rating)}${"☆".repeat(5 - review.rating)}</span></div>${review.review ? `<p>${escape(review.review)}</p>` : `<p class="review-empty-copy">Rating only</p>`}<small>${new Date(review.created_at).toLocaleDateString()}</small></article>`).join("");
-  const categoryControls = categories.length || business.offer
-    ? `<div class="catalog-categories">${business.offer ? `<button class="catalog-chip ${selectedCatalogCategory === "Offers" ? "active" : ""}" data-catalog-category="Offers">✦ Offers</button>` : ""}${categories.map((item) => `<button class="catalog-chip ${selectedCatalogCategory === item ? "active" : ""}" data-catalog-category="${escape(item)}">${escape(item)}</button>`).join("")}${selectedCatalogCategory ? `<button class="catalog-chip catalog-clear-filter" data-catalog-category="">Clear filter</button>` : ""}</div>`
-    : "";
-  const catalogGroupNames = selectedCatalogCategory ? [selectedCatalogCategory] : categories;
-  const catalogCard = (product) => `<article class="catalog-product"><div class="catalog-product-art">${product.image_url ? `<img src="${escape(product.image_url)}" alt="${escape(product.name)}">` : `<span>${escape(product.emoji || "✨")}</span>`}${product.offer ? `<b>${escape(product.offer)}</b>` : ""}</div><div class="catalog-product-copy"><small>${escape(product.category)}</small><strong>${escape(product.name)}</strong><p>${escape(product.details)}</p><div class="catalog-product-buy"><strong>${money(product.price)}</strong><button class="catalog-add" data-add="${product.id}" ${product.stock <= 0 ? "disabled" : ""}>${product.stock > 0 ? "＋ Add" : "Sold out"}</button></div></div></article>`;
-  const catalogSections = products.length
-    ? catalogGroupNames.map((name) => {
-      const entries = shown.filter((product) => selectedCatalogCategory ? true : product.category === name);
+  const catalogCard = (product) => `<article class="catalog-product"><div class="catalog-product-art">${product.image_url ? `<img src="${escape(product.image_url)}" alt="${escape(product.name)}">` : `<span>${escape(product.emoji || "✨")}</span>`}${product.offer ? `<b>${escape(product.offer)}</b>` : ""}</div><div class="catalog-product-copy"><strong>${escape(product.name)}</strong><p>${escape(product.details)}</p><div class="catalog-product-buy"><strong>${money(product.price)}</strong><button class="catalog-add" data-add="${product.id}" ${product.stock <= 0 ? "disabled" : ""}>${product.stock > 0 ? "＋ Add" : "Sold out"}</button></div></div></article>`;
+  const selectedProducts = selectedCatalogCategory === "Offers"
+    ? products.filter((product) => product.offer || business.offer)
+    : products.filter((product) => product.category === selectedCatalogCategory);
+  const catalogSections = selectedCatalogCategory
+    ? `<button class="text-button catalog-back" data-catalog-category="">← All categories</button><section class="catalog-category-section"><div class="catalog-category-heading"><h2>${escape(selectedCatalogCategory)}</h2><span>${selectedProducts.length} ${selectedProducts.length === 1 ? "item" : "items"}</span></div><div class="catalog-grid catalog-grid-expanded">${selectedProducts.map(catalogCard).join("") || productEmpty}</div></section>`
+    : products.length
+    ? categories.map((name) => {
+      const entries = products.filter((product) => product.category === name);
       return entries.length
-        ? `<section class="catalog-category-section"><div class="catalog-category-heading"><h3>${escape(name)}</h3><span>${entries.length} ${entries.length === 1 ? "item" : "items"}</span></div><div class="catalog-grid">${entries.map(catalogCard).join("")}</div></section>`
+        ? `<section class="catalog-category-section"><div class="catalog-category-heading"><h2>${escape(name)}</h2><span>${entries.length} ${entries.length === 1 ? "item" : "items"}</span></div><div class="catalog-grid catalog-grid-carousel">${entries.map(catalogCard).join("")}</div>${entries.length > 3 ? `<button class="text-button catalog-show-more" data-catalog-category="${escape(name)}">Show more →</button>` : ""}</section>`
         : "";
-    }).join("") || productEmpty
+    }).join("")
     : productEmpty;
-  main.innerHTML = `<div class="page-container shop-page" style="--shop-accent:${accent};--shop-pale:${pale};--shop-soft:${pale};--shop-ink:${ink}"><button class="shop-back-button" data-page="explore">← <span>Back to explore</span></button><section class="store-hero">${business.image_url ? `<img class="store-cover-photo" src="${escape(business.image_url)}" alt="">` : ""}<span class="store-cover-shade"></span><div class="store-identity"><span class="store-logo">${business.category === "Groceries" ? "🥬" : business.category === "Stationery" ? "📚" : "☕"}</span><div><span class="store-category">${escape(business.category)}</span><h1>${escape(business.name)} ${business.verified ? '<span class="verified">✓</span>' : ""}</h1><p>${escape(business.handle)} <span>·</span> <strong>★ ${Number(business.rating) > 0 ? Number(business.rating).toFixed(1) : "New"}</strong> <span>(${business.reviews || 0} reviews)</span></p></div></div><button class="store-follow ${follows.includes(business.id) ? "following" : ""}" data-follow="${business.id}" aria-pressed="${follows.includes(business.id)}">${follows.includes(business.id) ? "♥ Following" : "♡ Follow shop"}</button></section><div class="store-meta"><span>⌖ ${escape(business.branches?.join(" · ") || "Indiranagar")}</span><span>◷ ${escape(business.hours || "Opening hours not listed")}</span><span>Pickup · Local delivery</span></div><section class="store-welcome"><div><small>WELCOME TO OUR SHOP</small><p>${escape(business.description)}</p></div></section>${business.offer ? `<button class="store-offer" data-catalog-category="Offers"><span>✦ NEIGHBOURHOOD OFFER</span><strong>${escape(business.offer)}</strong><small>Tap to see the offer</small></button>` : ""}<div class="section-heading store-catalog-heading"><div><h2>Shop the catalogue</h2><p>Choose a category or browse everything</p></div><span class="store-product-count">${products.length} items</span></div>${categoryControls}<div class="catalog-sections">${catalogSections}</div><section class="store-details-panel"><div><small>VISIT US</small><strong>${escape(business.branches?.join(" · ") || "Indiranagar")}</strong></div><div><small>OPENING HOURS</small><strong>${escape(business.hours || "Please contact the shop")}</strong></div><div><small>ORDER OPTIONS</small><strong>Pickup and local delivery</strong></div></section><section class="store-reviews"><div class="store-reviews-heading"><div><small>NEIGHBOURHOOD NOTES</small><h2>Ratings & reviews</h2><p>What people think about this shop</p></div>${reviewAction}</div><div class="store-review-list">${reviewCards || `<p class="review-empty">No ratings yet. Be the first to share your experience.</p>`}</div></section><footer class="storefront-footer"><span>${escape(business.name)} · ${escape(business.handle)}</span><button class="shop-back-button" data-page="explore">← Back to local shops</button></footer></div>`;
+  main.innerHTML = `<div class="page-container shop-page" style="--shop-accent:${accent};--shop-pale:${pale};--shop-soft:${pale};--shop-ink:${ink}"><button class="shop-back-button" data-page="explore">← <span>Back to explore</span></button><section class="store-hero">${business.image_url ? `<img class="store-cover-photo" src="${escape(business.image_url)}" alt="">` : ""}<span class="store-cover-shade"></span><div class="store-identity"><span class="store-logo">${business.category === "Groceries" ? "🥬" : business.category === "Stationery" ? "📚" : "☕"}</span><div><span class="store-category">${escape(business.category)}</span><h1>${escape(business.name)} ${business.verified ? '<span class="verified">✓</span>' : ""}</h1><p>${escape(business.handle)} <span>·</span> <strong>★ ${Number(business.rating) > 0 ? Number(business.rating).toFixed(1) : "New"}</strong> <span>(${business.reviews || 0} reviews)</span></p></div></div><button class="store-follow ${follows.includes(business.id) ? "following" : ""}" data-follow="${business.id}" aria-pressed="${follows.includes(business.id)}">${follows.includes(business.id) ? "♥ Following" : "♡ Follow shop"}</button></section><div class="store-meta"><span>⌖ ${escape(business.branches?.join(" · ") || "Indiranagar")}</span><span>◷ ${escape(business.hours || "Opening hours not listed")}</span><span>Pickup · Local delivery</span></div>${business.offer ? `<div class="store-offer"><span>✦ OFFER</span><strong>${escape(business.offer)}</strong></div>` : ""}<div class="catalog-sections">${catalogSections}</div><section class="store-details-panel"><div><small>VISIT US</small><strong>${escape(business.branches?.join(" · ") || "Indiranagar")}</strong></div><div><small>OPENING HOURS</small><strong>${escape(business.hours || "Please contact the shop")}</strong></div><div><small>ORDER OPTIONS</small><strong>Pickup and local delivery</strong></div></section><section class="store-reviews"><div class="store-reviews-heading"><div><small>NEIGHBOURHOOD NOTES</small><h2>Ratings & reviews</h2><p>What people think about this shop</p></div>${reviewAction}</div><div class="store-review-list">${reviewCards || `<p class="review-empty">No ratings yet. Be the first to share your experience.</p>`}</div></section><footer class="storefront-footer"><span>${escape(business.name)} · ${escape(business.handle)}</span><button class="shop-back-button" data-page="explore">← Back to local shops</button></footer></div>`;
 }
 
 function renderProfile() {
@@ -499,26 +500,28 @@ function adminTabs() {
 function updateChrome() {
   document.body.classList.toggle("auth-screen", !session && !guestBrowsing);
   const role = profile?.role || "customer";
+  const customerLinks = [["home","⌂","Home"],["explore","⌕","Explore"],["following","♡","Following"]];
   const links = role === "admin"
     ? [["approvals","✓","Approvals"],["categories","▦","Categories"],["deliveries","₹","Delivery fees"],["partners","♧","Partners"],["ads","▧","Promotions"],["roles","⚙","Team & roles"]]
     : role === "business"
       ? [["overview","⌂","Overview"],["orders","▤","Orders"],["products","▧","Products"],["storefront","✦","Shop appearance"],["ads","▤","Promotions"]]
       : role === "delivery_partner"
         ? [["deliveries","↗","Deliveries"],["profile","☺","Profile"]]
-      : [["home","⌂","Home"],["explore","⌕","Explore"],["following","♡","Following"],["profile","☺","Profile"]];
+      : [...customerLinks, ...(session ? [["profile","☺","Profile"]] : [])];
   document.getElementById("sidebar-label").textContent = role === "admin" ? "ADMIN WORKSPACE" : role === "business" ? "BUSINESS WORKSPACE" : "YOUR SPACE";
-  const activeSection = role === "admin" ? adminSection : role === "business" ? ownerSection : role === "delivery_partner" ? partnerSection : page === "shop" ? "explore" : page;
+  const activeSection = role === "admin" ? adminSection : role === "business" ? ownerSection : role === "delivery_partner" ? partnerSection : page === "shop" || page === "category" ? "explore" : page;
   document.getElementById("side-nav").innerHTML = links.map(([key,icon,label]) => `<button class="nav-link ${key === activeSection ? "active" : ""}" data-live-nav="${key}" ${key === activeSection ? 'aria-current="page"' : ""}><span class="nav-icon">${icon}</span>${label}</button>`).join("");
   const mobile = role === "customer"
-    ? [["home","⌂","Home"],["explore","⌕","Explore"],["following","♡","Following"],["profile","☺","Profile"]]
+    ? [...customerLinks, ...(session ? [["profile","☺","Profile"]] : [])]
     : links;
   document.querySelector(".mobile-nav").innerHTML = mobile.map(([key,icon,label]) => `<button class="${key === activeSection ? "active" : ""}" data-live-nav="${key}" ${key === activeSection ? 'aria-current="page"' : ""}><span>${icon}</span>${label}</button>`).join("");
   const actions = document.querySelector(".topbar-actions");
   actions.innerHTML = session
-    ? `<button class="sound-toggle" id="sound-toggle" type="button" data-toggle-sound aria-pressed="${soundsEnabled()}" aria-label="${soundsEnabled() ? "Turn interface sounds off" : "Turn interface sounds on"}" title="${soundsEnabled() ? "Turn interface sounds off" : "Turn interface sounds on"}">${soundsEnabled() ? "🔊" : "🔇"}</button><button class="soft-button" data-action="cart">Bag <span>${cart.reduce((sum,item) => sum + item.quantity,0)}</span></button><button class="account-button" data-live-nav="profile"><span class="avatar avatar-small">${escape(profile?.full_name?.[0] || session.user.email[0]).toUpperCase()}</span><span>${escape(profile?.full_name || session.user.email)}</span></button><button class="small-button" data-action="sign-out">Sign out</button>`
+    ? `<button class="soft-button" data-action="cart">Bucket <span>${cart.reduce((sum,item) => sum + item.quantity,0)}</span></button><button class="account-button" data-live-nav="profile"><span class="avatar avatar-small">${escape(profile?.full_name?.[0] || session.user.email[0]).toUpperCase()}</span><span>${escape(profile?.full_name || session.user.email)}</span></button><button class="small-button" data-action="sign-out">Sign out</button>`
     : guestBrowsing
-      ? `<button class="sound-toggle" id="sound-toggle" type="button" data-toggle-sound aria-pressed="${soundsEnabled()}" aria-label="${soundsEnabled() ? "Turn interface sounds off" : "Turn interface sounds on"}" title="${soundsEnabled() ? "Turn interface sounds off" : "Turn interface sounds on"}">${soundsEnabled() ? "🔊" : "🔇"}</button><button class="soft-button" data-action="cart">Bag <span>${cart.reduce((sum,item) => sum + item.quantity,0)}</span></button><button class="primary-button" data-action="sign-in">Sign in</button>`
+      ? `<button class="soft-button" data-action="cart">Bucket <span>${cart.reduce((sum,item) => sum + item.quantity,0)}</span></button><button class="primary-button" data-action="sign-in">Sign in</button>`
       : "";
+  document.querySelector(".sidebar-profile").hidden = !session && role === "customer";
   document.getElementById("sidebar-profile-name").textContent = profile?.full_name || session?.user?.email || "Neighbour";
   document.querySelector(".sidebar-profile small").textContent = role === "admin" ? "Administrator" : role === "business" ? "Business owner" : role === "delivery_partner" ? "Delivery partner" : "Local member";
 }
@@ -539,6 +542,7 @@ function render() {
   else if (profile?.role === "business") renderBusiness();
   else if (profile?.role === "delivery_partner") renderPartner();
   else if (page === "explore") renderExplore();
+  else if (page === "category") renderCategory();
   else if (page === "shop") {
     renderShop();
     const business = shopById(selectedShopId);
@@ -551,7 +555,7 @@ function render() {
       storefront.style.setProperty("--shop-soft", colors.surface);
       storefront.style.setProperty("--shop-ink", colors.ink);
       storefront.querySelector(":scope > .shop-back-button")?.remove();
-      main.insertAdjacentHTML("afterbegin", `<div class="shop-toolbar"><button class="shop-back-button" data-page="explore">← <span>Back to shops</span></button><button class="soft-button" data-action="cart">Bag <span>${cart.reduce((sum,item) => sum + item.quantity,0)}</span></button></div>`);
+      main.insertAdjacentHTML("afterbegin", `<div class="shop-toolbar"><button class="shop-back-button" data-page="explore">← <span>Back to shops</span></button><button class="soft-button" data-action="cart">Bucket <span>${cart.reduce((sum,item) => sum + item.quantity,0)}</span></button></div>`);
     }
   }
   else if (page === "following") renderFollowing();
@@ -560,18 +564,11 @@ function render() {
 }
 
 function checkoutModal() {
-  if (!session) {
-    guestBrowsing = false;
-    authMode = "sign-in";
-    authNotice = "Sign in to place your order. Your bag is saved.";
-    render();
-    return;
-  }
   const business = cart.length ? shopById(cart[0].businessId) : null;
   if (!business) return;
   const deliveryFee = shopCategories.find((entry) => entry.name === business.category)?.delivery_fee || 0;
   const subtotal = cart.reduce((sum,item) => sum + item.price * item.quantity,0);
-  modalRoot.innerHTML = `<div class="modal-backdrop" data-close-modal></div><section class="modal modal-simple" role="dialog" aria-modal="true" aria-label="Complete order"><button class="close-button modal-close" data-close-modal aria-label="Close">×</button><h2>Almost yours</h2><p>Your order will be sent securely to ${escape(business.name)}.</p><form id="checkout-form" class="checkout-form" data-subtotal="${subtotal}" data-delivery-fee="${deliveryFee}"><label class="form-field">Your name<input name="customer" required value="${escape(profile.full_name || "")}"></label><label class="form-field">Phone number<input name="phone" required type="tel" value="${escape(profile.phone || "")}"></label><label class="form-field">Choose a branch<select name="branch" required>${(business.branches || []).map((branch) => `<option>${escape(branch)}</option>`).join("")}</select></label><label class="checkout-option"><input type="radio" name="fulfillment" value="Pickup" checked> I’ll pick it up</label><label class="checkout-option"><input type="radio" name="fulfillment" value="Delivery"> Local delivery · ${money(deliveryFee)} fee</label><label class="form-field checkout-delivery-address" hidden>Delivery address<input name="delivery_address" maxlength="300" autocomplete="street-address" placeholder="Street, area and any delivery details"></label><label class="form-field">Note for the shop<input name="note" maxlength="500"></label><div class="checkout-costs"><div><span>Items</span><strong>${money(subtotal)}</strong></div><div class="checkout-delivery-fee" hidden><span>Delivery fee</span><strong>${money(deliveryFee)}</strong></div><div class="cart-total-line"><span>Estimated total</span><strong data-checkout-total>${money(subtotal)}</strong></div></div><button class="primary-button">Place order request</button></form></section>`;
+  modalRoot.innerHTML = `<div class="modal-backdrop" data-close-modal></div><section class="modal modal-simple" role="dialog" aria-modal="true" aria-label="Complete order"><button class="close-button modal-close" data-close-modal aria-label="Close">×</button><h2>Complete your order</h2><p>Enter your contact details and choose where to collect your order.</p><form id="checkout-form" class="checkout-form" data-subtotal="${subtotal}" data-delivery-fee="${deliveryFee}"><label class="form-field">Your name<input name="customer" required autocomplete="name" value="${escape(profile?.full_name || "")}"></label><label class="form-field">Phone number<input name="phone" required type="tel" autocomplete="tel" value="${escape(profile?.phone || "")}"></label><label class="form-field">Place / branch<select name="branch" required>${(business.branches || []).map((branch) => `<option>${escape(branch)}</option>`).join("")}</select></label><label class="checkout-option"><input type="radio" name="fulfillment" value="Pickup" checked> I’ll pick it up</label><label class="checkout-option"><input type="radio" name="fulfillment" value="Delivery"> Local delivery · ${money(deliveryFee)} fee</label><label class="form-field checkout-delivery-address" hidden>Delivery address<input name="delivery_address" maxlength="300" autocomplete="street-address" placeholder="Street, area and any delivery details"></label><label class="form-field">Note for the shop<input name="note" maxlength="500"></label><div class="checkout-costs"><div><span>Items</span><strong>${money(subtotal)}</strong></div><div class="checkout-delivery-fee" hidden><span>Delivery fee</span><strong>${money(deliveryFee)}</strong></div><div class="cart-total-line"><span>Estimated total</span><strong data-checkout-total>${money(subtotal)}</strong></div></div><button class="primary-button">Place order request</button></form></section>`;
 }
 
 function partnerApplicationModal() {
@@ -603,7 +600,7 @@ function reviewModal(business) {
 
 function cartModal() {
   const business = cart.length ? shopById(cart[0].businessId) : null;
-  modalRoot.innerHTML = `<div class="modal-backdrop" data-close-modal></div><section class="modal modal-simple" role="dialog" aria-modal="true"><button class="close-button modal-close" data-close-modal aria-label="Close">×</button><h2>Your bag${cart.length ? ` · ${cart.reduce((sum,item) => sum + item.quantity,0)}` : ""}</h2>${business ? `<p>From ${escape(business.name)}</p>${cart.map((item) => `<div class="cart-item"><span class="product-emoji">${escape(item.emoji)}</span><span class="cart-item-copy"><strong>${escape(item.name)}</strong><small>${money(item.price)} each</small></span><span class="quantity-control"><button data-cart-delta="-1" data-product-id="${item.productId}">−</button><span>${item.quantity}</span><button data-cart-delta="1" data-product-id="${item.productId}">+</button></span></div>`).join("")}<div class="cart-total-line"><span>Estimated total</span><strong>${money(cart.reduce((sum,item) => sum + item.price * item.quantity,0))}</strong></div><button class="primary-button" data-action="checkout">Continue to checkout</button>` : empty("Your bag is taking a breather","Open a local shop and add something lovely.")}</section>`;
+  modalRoot.innerHTML = `<div class="modal-backdrop" data-close-modal></div><section class="modal modal-simple" role="dialog" aria-modal="true"><button class="close-button modal-close" data-close-modal aria-label="Close">×</button><h2>Your bag${cart.length ? ` · ${cart.reduce((sum,item) => sum + item.quantity,0)}` : ""}</h2>${business ? `<p>From ${escape(business.name)}</p>${cart.map((item) => `<div class="cart-item"><span class="product-emoji">${escape(item.emoji)}</span><span class="cart-item-copy"><strong>${escape(item.name)}</strong><small>${money(item.price)} each</small></span><span class="quantity-control"><button data-cart-delta="-1" data-product-id="${item.productId}">−</button><span>${item.quantity}</span><button data-cart-delta="1" data-product-id="${item.productId}">+</button></span></div>`).join("")}<div class="cart-total-line"><span>Estimated total</span><strong>${money(cart.reduce((sum,item) => sum + item.price * item.quantity,0))}</strong></div><button class="primary-button" data-action="checkout">Continue to checkout</button>` : empty("Your bucket is taking a breather","Open a local shop and add something lovely.")}</section>`;
 }
 
 function getFormValues(form) {
@@ -664,14 +661,6 @@ async function onClick(event) {
   const target = event.target.closest("button, a, [data-shop-card], [data-close-modal]");
   if (!target) return;
   if (target.dataset.closeModal !== undefined) { modalRoot.innerHTML = ""; return; }
-  if (target.dataset.toggleSound !== undefined) {
-    const enabled = !soundsEnabled();
-    setSoundsEnabled(enabled);
-    updateChrome();
-    if (enabled) playUiSound("toggle");
-    notify(enabled ? "Interface sounds on." : "Interface sounds off.");
-    return;
-  }
   if (target.dataset.authAction === "sign-in") { authMode = "sign-in"; authNotice = ""; renderAuth(); return; }
   if (target.dataset.authAction === "sign-up") { authMode = "sign-up"; authNotice = ""; renderAuth(); return; }
   if (target.dataset.authAction === "reset") { authMode = "reset"; authNotice = ""; renderAuth(); return; }
@@ -772,13 +761,13 @@ async function onClick(event) {
   if (target.dataset.category) {
     const sound = /grocer|food|market/i.test(target.dataset.category) ? "grocery" : /station|book|paper/i.test(target.dataset.category) ? "stationery" : /cafe|bakery|bake/i.test(target.dataset.category) ? "cafe" : "tap";
     playUiSound(sound);
-    category = category === target.dataset.category ? "" : target.dataset.category;
-    page = "explore";
+    category = target.dataset.category;
+    page = "category";
     render();
     return;
   }
   if (target.dataset.clearCategory !== undefined) { category = ""; renderExplore(); return; }
-  if (target.dataset.catalogCategory !== undefined) { selectedCatalogCategory = selectedCatalogCategory === target.dataset.catalogCategory ? "" : target.dataset.catalogCategory; renderShop(); return; }
+  if (target.dataset.catalogCategory !== undefined) { selectedCatalogCategory = target.dataset.catalogCategory; renderShop(); return; }
   if (target.dataset.shopCard || target.dataset.shop) {
     selectedShopId = target.dataset.shopCard || target.dataset.shop;
     selectedCatalogCategory = "";
@@ -818,7 +807,7 @@ async function onClick(event) {
     else cart.push({ businessId: business.id, productId: product.id, name: product.name, emoji: product.emoji, price: product.price, quantity: 1 });
     saveCart();
     updateChrome();
-    notify("Added to your bag.");
+    notify("Added to your bucket.");
     return;
   }
   if (target.dataset.cartDelta) {
@@ -967,9 +956,9 @@ async function onSubmit(event) {
     saveCart();
     modalRoot.innerHTML = "";
     await loadData();
-    page = "profile";
+    if (session) page = "profile";
     render();
-    notify(`Order ${String(data).slice(0, 8).toUpperCase()} placed. The shop will confirm it.`);
+    notify(`Order ${String(data).slice(0, 8).toUpperCase()} placed. The shop will contact you to confirm it.`);
     return;
   }
   if (form.id === "business-form") {
