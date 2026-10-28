@@ -81,44 +81,6 @@ create table public.ads (
   created_at timestamptz not null default now()
 );
 
-insert into public.businesses (
-  id, name, handle, category, description, theme, offer, hours, branches,
-  rating, reviews, verified, status
-) values
-  ('00000000-0000-4000-8000-000000000001', 'Moonlight Cafe', '@moonlight.cafe', 'Cafe & dining', 'Coffee, comfort food & slow mornings', 'coffee', 'Free cookie with any coffee', 'Open today · 8:00 am – 7:00 pm', '["12th Main Street", "HAL 2nd Stage"]', 4.9, 128, true, 'approved'),
-  ('00000000-0000-4000-8000-000000000002', 'Sunday Bakehouse', '@sunday.bakes', 'Bakery', 'Small-batch breads & buttery bakes', 'coffee', 'Fresh sourdough at 4 pm', 'Open today · 7:00 am – 6:00 pm', '["Jeevan Bima Nagar", "Indiranagar"]', 4.9, 204, true, 'approved'),
-  ('00000000-0000-4000-8000-000000000003', 'The Good Grocer', '@thegoodgrocer', 'Groceries', 'Fresh produce from nearby farms', 'green', 'Farm box from ₹299', 'Open today · 8:00 am – 8:00 pm', '["Indiranagar"]', 4.7, 92, true, 'approved'),
-  ('00000000-0000-4000-8000-000000000004', 'Paper Trail Stationery', '@papertrail.indiranagar', 'Stationery', 'Notebooks, paper goods & thoughtful gifts', 'maroon', 'Buy 2, get 10% off', 'Open today · 10:00 am – 8:00 pm', '["100 Feet Road"]', 4.9, 67, true, 'approved'),
-  ('00000000-0000-4000-8000-000000000005', 'Wildflower Studio', '@wildflower.studio', 'Flowers & gifts', 'Thoughtful bouquets, made by hand', 'maroon', '10% off this week', 'Open today · 9:00 am – 6:00 pm', '["CMH Road"]', 4.8, 86, true, 'approved')
-on conflict (id) do nothing;
-
-insert into public.products (
-  id, business_id, name, details, category, price, emoji, stock
-) values
-  ('10000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000001', 'Honey oat flat white', 'Double espresso · oat milk · local honey', 'Coffee & tea', 180, '☕', 18),
-  ('10000000-0000-4000-8000-000000000002', '00000000-0000-4000-8000-000000000001', 'Almond croissant', 'Freshly baked every morning', 'Fresh bakes', 145, '🥐', 12),
-  ('10000000-0000-4000-8000-000000000003', '00000000-0000-4000-8000-000000000001', 'Avocado toast', 'Sourdough · chilli flakes · greens', 'Breakfast', 260, '🥑', 8),
-  ('10000000-0000-4000-8000-000000000004', '00000000-0000-4000-8000-000000000001', 'Orange cold brew', 'Slow-steeped for 18 hours', 'Coffee & tea', 210, '🧋', 10),
-  ('10000000-0000-4000-8000-000000000005', '00000000-0000-4000-8000-000000000002', 'Country sourdough loaf', 'Naturally leavened · 700 g', 'Breads', 290, '🍞', 9),
-  ('10000000-0000-4000-8000-000000000006', '00000000-0000-4000-8000-000000000002', 'Cinnamon morning bun', 'Brown sugar · cinnamon · butter', 'Pastries', 125, '🥮', 15),
-  ('10000000-0000-4000-8000-000000000007', '00000000-0000-4000-8000-000000000003', 'Weekend farm box', 'Seasonal vegetables · serves 2', 'Vegetables', 399, '🥬', 14),
-  ('10000000-0000-4000-8000-000000000008', '00000000-0000-4000-8000-000000000003', 'Ooty strawberries', 'Fresh-picked · 250 g', 'Fruits', 180, '🍓', 11),
-  ('10000000-0000-4000-8000-000000000009', '00000000-0000-4000-8000-000000000004', 'The Art of Noticing', 'A lovely little book for slow days', 'Books', 499, '📖', 7),
-  ('10000000-0000-4000-8000-000000000010', '00000000-0000-4000-8000-000000000004', 'Everyday journal', 'Recycled paper · 160 pages', 'Notebooks', 320, '📔', 20),
-  ('10000000-0000-4000-8000-000000000011', '00000000-0000-4000-8000-000000000005', 'The Sunday bunch', 'Seasonal blooms, wrapped with care', 'Flowers', 650, '💐', 6),
-  ('10000000-0000-4000-8000-000000000012', '00000000-0000-4000-8000-000000000005', 'Colourful tulips', 'A bright bunch of 8 stems', 'Flowers', 520, '🌷', 12)
-on conflict (id) do nothing;
-
-insert into public.ads (id, business_id, title, message, status)
-values (
-  '20000000-0000-4000-8000-000000000001',
-  '00000000-0000-4000-8000-000000000001',
-  'Coffee & a cookie on us',
-  'Enjoy a free cookie with any coffee today.',
-  'live'
-)
-on conflict (id) do nothing;
-
 create index businesses_status_category_idx on public.businesses(status, category);
 create index businesses_owner_id_idx on public.businesses(owner_id);
 create index products_business_id_idx on public.products(business_id);

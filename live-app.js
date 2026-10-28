@@ -21,6 +21,7 @@ const themeValues = {
 let session = null;
 let profile = null;
 let businesses = [];
+let businessCategories = [];
 let orders = [];
 let ads = [];
 let follows = [];
@@ -85,15 +86,27 @@ function businessThemeColors(business) {
 }
 
 async function loadData() {
-  const [businessResult, adsResult, reviewResult] = await Promise.all([
+  const [businessResult, categoryResult, adsResult, reviewResult] = await Promise.all([
     supabase.from("businesses").select("*, products(*)").order("created_at"),
+    supabase.from("business_categories").select("*").order("name"),
     supabase.from("ads").select("*").order("created_at", { ascending: false }),
     supabase.from("business_reviews").select("id,business_id,customer_id,rating,review,created_at,updated_at").order("created_at", { ascending: false })
   ]);
   if (businessResult.error) throw businessResult.error;
+  if (categoryResult.error) throw categoryResult.error;
   if (adsResult.error) throw adsResult.error;
   if (reviewResult.error) throw reviewResult.error;
   businesses = businessResult.data || [];
+  businessCategories = categoryResult.data || [];
+  for (const business of businesses) {
+    const savedCategories = businessCategories
+      .filter((entry) => entry.business_id === business.id)
+      .map((entry) => entry.name);
+    business.categories = [...new Set([
+      ...savedCategories,
+      ...(business.products || []).map((product) => product.category)
+    ])].sort((first, second) => first.localeCompare(second));
+  }
   ads = adsResult.data || [];
   reviews = reviewResult.data || [];
   orders = [];
@@ -165,7 +178,7 @@ function card(business) {
   const followed = follows.includes(business.id);
   const product = (business.products || []).slice(0, 1);
   return `<article class="business-card" data-shop-card="${business.id}" tabindex="0" role="group" aria-label="Open ${escape(business.name)} catalog">
-    <div class="business-cover"><span class="cover-shade"></span><span class="cover-emoji">${escape(business.category === "Groceries" ? "🥬" : business.category === "Stationery" ? "📚" : "☕")}</span>${business.offer ? `<span class="cover-tag">${escape(business.offer)}</span>` : ""}<button class="follow-button ${followed ? "following" : ""}" data-follow="${business.id}">${followed ? "♥" : "♡"}</button></div>
+    <div class="business-cover">${business.image_url ? `<img class="cover-photo" src="${escape(business.image_url)}" alt="">` : `<span class="cover-emoji">${escape(business.category === "Groceries" ? "🥬" : business.category === "Stationery" ? "📚" : "☕")}</span>`}<span class="cover-shade"></span>${business.offer ? `<span class="cover-tag">${escape(business.offer)}</span>` : ""}<button class="follow-button ${followed ? "following" : ""}" data-follow="${business.id}">${followed ? "♥" : "♡"}</button></div>
     <div class="business-info"><div class="business-title-row"><h3>${escape(business.name)}</h3>${business.verified ? '<span class="verified">✓</span>' : ""}</div><p>${escape(business.description)}</p><div class="business-meta"><span>${escape(business.category)}</span><span class="rating">★ ${Number(business.rating) > 0 ? Number(business.rating).toFixed(1) : "New"} <span style="color:#9aa3b2;font-weight:400">(${business.reviews || 0})</span></span></div><div class="business-card-bottom"><span>⌖ ${escape(business.branches?.[0] || "")}</span><button data-shop="${business.id}">View shop →</button></div>${product.length ? `<small>${escape(product[0].name)} · ${money(product[0].price)}</small>` : ""}</div>
   </article>`;
 }
@@ -201,7 +214,7 @@ function renderShop() {
   }
   const [accent, pale, ink] = themeValues[business.theme] || themeValues.coffee;
   const products = business.products || [];
-  const categories = [...new Set(products.map((product) => product.category))];
+  const categories = business.categories || [...new Set(products.map((product) => product.category))];
   const shown = selectedCatalogCategory === "All"
     ? products
     : selectedCatalogCategory === "Offers"
@@ -219,7 +232,7 @@ function renderShop() {
       ? `<button class="secondary-button" data-action="sign-in">Sign in to rate this shop</button>`
       : "";
   const reviewCards = businessReviews.map((review) => `<article class="review-card"><div class="review-card-heading"><strong>${review.customer_id === session?.user?.id ? "Your review" : "Neighbour"}</strong><span>${"★".repeat(review.rating)}${"☆".repeat(5 - review.rating)}</span></div>${review.review ? `<p>${escape(review.review)}</p>` : `<p class="review-empty-copy">Rating only</p>`}<small>${new Date(review.created_at).toLocaleDateString()}</small></article>`).join("");
-  main.innerHTML = `<div class="page-container shop-page" style="--shop-accent:${accent};--shop-pale:${pale};--shop-soft:${pale};--shop-ink:${ink}"><button class="shop-back-button" data-page="explore">← <span>Back to explore</span></button><section class="store-hero"><span class="store-cover-shade"></span><div class="store-identity"><span class="store-logo">${business.category === "Groceries" ? "🥬" : business.category === "Stationery" ? "📚" : "☕"}</span><div><span class="store-category">${escape(business.category)}</span><h1>${escape(business.name)} ${business.verified ? '<span class="verified">✓</span>' : ""}</h1><p>${escape(business.handle)} <span>·</span> <strong>★ ${Number(business.rating) > 0 ? Number(business.rating).toFixed(1) : "New"}</strong> <span>(${business.reviews || 0} reviews)</span></p></div></div><button class="store-follow ${follows.includes(business.id) ? "following" : ""}" data-follow="${business.id}" aria-pressed="${follows.includes(business.id)}">${follows.includes(business.id) ? "♥ Following" : "♡ Follow shop"}</button></section><div class="store-meta"><span>⌖ ${escape(business.branches?.join(" · ") || "Indiranagar")}</span><span>◷ ${escape(business.hours || "Opening hours not listed")}</span><span>Pickup · Local delivery</span></div><section class="store-welcome"><div><small>WELCOME TO OUR SHOP</small><p>${escape(business.description)}</p></div></section>${business.offer ? `<button class="store-offer" data-catalog-category="Offers"><span>✦ NEIGHBOURHOOD OFFER</span><strong>${escape(business.offer)}</strong><small>Tap to see the offer</small></button>` : ""}<div class="section-heading store-catalog-heading"><div><h2>Shop the catalogue</h2><p>Choose a category or browse everything</p></div><span class="store-product-count">${products.length} items</span></div>${products.length ? `<div class="catalog-categories"><button class="catalog-chip ${selectedCatalogCategory === "All" ? "active" : ""}" data-catalog-category="All">All items</button>${business.offer ? `<button class="catalog-chip ${selectedCatalogCategory === "Offers" ? "active" : ""}" data-catalog-category="Offers">✦ Offers</button>` : ""}${categories.map((item) => `<button class="catalog-chip ${selectedCatalogCategory === item ? "active" : ""}" data-catalog-category="${escape(item)}">${escape(item)}</button>`).join("")}</div>` : ""}<div class="catalog-grid">${shown.map((product) => `<article class="catalog-product"><div class="catalog-product-art"><span>${escape(product.emoji || "✨")}</span>${product.offer ? `<b>${escape(product.offer)}</b>` : ""}</div><div class="catalog-product-copy"><small>${escape(product.category)}</small><strong>${escape(product.name)}</strong><p>${escape(product.details)}</p><div class="catalog-product-buy"><strong>${money(product.price)}</strong><button class="catalog-add" data-add="${product.id}" ${product.stock <= 0 ? "disabled" : ""}>${product.stock > 0 ? "＋ Add" : "Sold out"}</button></div></div></article>`).join("") || productEmpty}</div><section class="store-details-panel"><div><small>VISIT US</small><strong>${escape(business.branches?.join(" · ") || "Indiranagar")}</strong></div><div><small>OPENING HOURS</small><strong>${escape(business.hours || "Please contact the shop")}</strong></div><div><small>ORDER OPTIONS</small><strong>Pickup and local delivery</strong></div></section><section class="store-reviews"><div class="store-reviews-heading"><div><small>NEIGHBOURHOOD NOTES</small><h2>Ratings & reviews</h2><p>What people think about this shop</p></div>${reviewAction}</div><div class="store-review-list">${reviewCards || `<p class="review-empty">No ratings yet. Be the first to share your experience.</p>`}</div></section></div>`;
+  main.innerHTML = `<div class="page-container shop-page" style="--shop-accent:${accent};--shop-pale:${pale};--shop-soft:${pale};--shop-ink:${ink}"><button class="shop-back-button" data-page="explore">← <span>Back to explore</span></button><section class="store-hero">${business.image_url ? `<img class="store-cover-photo" src="${escape(business.image_url)}" alt="">` : ""}<span class="store-cover-shade"></span><div class="store-identity"><span class="store-logo">${business.category === "Groceries" ? "🥬" : business.category === "Stationery" ? "📚" : "☕"}</span><div><span class="store-category">${escape(business.category)}</span><h1>${escape(business.name)} ${business.verified ? '<span class="verified">✓</span>' : ""}</h1><p>${escape(business.handle)} <span>·</span> <strong>★ ${Number(business.rating) > 0 ? Number(business.rating).toFixed(1) : "New"}</strong> <span>(${business.reviews || 0} reviews)</span></p></div></div><button class="store-follow ${follows.includes(business.id) ? "following" : ""}" data-follow="${business.id}" aria-pressed="${follows.includes(business.id)}">${follows.includes(business.id) ? "♥ Following" : "♡ Follow shop"}</button></section><div class="store-meta"><span>⌖ ${escape(business.branches?.join(" · ") || "Indiranagar")}</span><span>◷ ${escape(business.hours || "Opening hours not listed")}</span><span>Pickup · Local delivery</span></div><section class="store-welcome"><div><small>WELCOME TO OUR SHOP</small><p>${escape(business.description)}</p></div></section>${business.offer ? `<button class="store-offer" data-catalog-category="Offers"><span>✦ NEIGHBOURHOOD OFFER</span><strong>${escape(business.offer)}</strong><small>Tap to see the offer</small></button>` : ""}<div class="section-heading store-catalog-heading"><div><h2>Shop the catalogue</h2><p>Choose a category or browse everything</p></div><span class="store-product-count">${products.length} items</span></div>${categories.length || business.offer ? `<div class="catalog-categories"><button class="catalog-chip ${selectedCatalogCategory === "All" ? "active" : ""}" data-catalog-category="All">All items</button>${business.offer ? `<button class="catalog-chip ${selectedCatalogCategory === "Offers" ? "active" : ""}" data-catalog-category="Offers">✦ Offers</button>` : ""}${categories.map((item) => `<button class="catalog-chip ${selectedCatalogCategory === item ? "active" : ""}" data-catalog-category="${escape(item)}">${escape(item)}</button>`).join("")}</div>` : ""}<div class="catalog-grid">${shown.map((product) => `<article class="catalog-product"><div class="catalog-product-art">${product.image_url ? `<img src="${escape(product.image_url)}" alt="${escape(product.name)}">` : `<span>${escape(product.emoji || "✨")}</span>`}${product.offer ? `<b>${escape(product.offer)}</b>` : ""}</div><div class="catalog-product-copy"><small>${escape(product.category)}</small><strong>${escape(product.name)}</strong><p>${escape(product.details)}</p><div class="catalog-product-buy"><strong>${money(product.price)}</strong><button class="catalog-add" data-add="${product.id}" ${product.stock <= 0 ? "disabled" : ""}>${product.stock > 0 ? "＋ Add" : "Sold out"}</button></div></div></article>`).join("") || productEmpty}</div><section class="store-details-panel"><div><small>VISIT US</small><strong>${escape(business.branches?.join(" · ") || "Indiranagar")}</strong></div><div><small>OPENING HOURS</small><strong>${escape(business.hours || "Please contact the shop")}</strong></div><div><small>ORDER OPTIONS</small><strong>Pickup and local delivery</strong></div></section><section class="store-reviews"><div class="store-reviews-heading"><div><small>NEIGHBOURHOOD NOTES</small><h2>Ratings & reviews</h2><p>What people think about this shop</p></div>${reviewAction}</div><div class="store-review-list">${reviewCards || `<p class="review-empty">No ratings yet. Be the first to share your experience.</p>`}</div></section></div>`;
 }
 
 function renderProfile() {
@@ -270,10 +283,10 @@ function renderBusiness() {
     const shopOrders = orders.filter((order) => order.business_id === business.id);
     main.innerHTML = `<div class="page-container">${header("Orders from your neighbours","Confirm requests and keep customers in the loop.","BUSINESS WORKSPACE")}<div class="workspace-tabs">${ownerTabs()}</div><section class="dashboard-panel">${shopOrders.map((order) => orderCard(order, true)).join("") || empty("No orders yet","Customer orders will appear here.")}</section></div>`;
   } else if (ownerSection === "products") {
-    main.innerHTML = `<div class="page-container">${header("Your product shelf","Manage what neighbours can order.","BUSINESS WORKSPACE")}<div class="workspace-tabs">${ownerTabs()}</div><button class="primary-button" data-action="add-product">＋ Add a product</button><section class="dashboard-panel">${(business.products || []).map((product) => `<div class="product-management-row"><div class="product-management-name"><span>${escape(product.emoji || "✨")}</span>${escape(product.name)} <small>${escape(product.category)}</small></div><strong>${money(product.price)}</strong><span class="stock-state ${product.stock <= 0 ? "out" : ""}">${product.stock} in stock</span><div class="product-management-actions"><button class="small-button" data-edit-product="${product.id}">Edit</button><button class="small-button" data-delete-product="${product.id}">Remove</button><button class="small-button" data-stock="${product.id}" data-stock-value="${product.stock}">${product.stock > 0 ? "Mark unavailable" : "Restock"}</button></div></div>`).join("") || empty("No products yet","Add your first product to the catalogue.")}</section></div>`;
+    main.innerHTML = `<div class="page-container">${header("Your product shelf","Manage products and the categories neighbours can browse.","BUSINESS WORKSPACE")}<div class="workspace-tabs">${ownerTabs()}</div><div class="owner-product-actions"><button class="primary-button" data-action="add-product">＋ Add a product</button><form id="category-form" class="category-create-form"><label class="form-field">New category<input name="name" maxlength="50" required placeholder="e.g. Seasonal specials"></label><button class="secondary-button">Add category</button></form></div><section class="owner-category-list">${(business.categories || []).map((name) => `<span class="owner-category-chip">${escape(name)}</span>`).join("") || `<small>No categories yet. Add one before creating a product.</small>`}</section><section class="dashboard-panel">${(business.products || []).map((product) => `<div class="product-management-row"><div class="product-management-name">${product.image_url ? `<img class="product-management-photo" src="${escape(product.image_url)}" alt="">` : `<span>${escape(product.emoji || "✨")}</span>`}${escape(product.name)} <small>${escape(product.category)}</small></div><strong>${money(product.price)}</strong><span class="stock-state ${product.stock <= 0 ? "out" : ""}">${product.stock} in stock</span><div class="product-management-actions"><button class="small-button" data-edit-product="${product.id}">Edit</button><button class="small-button" data-delete-product="${product.id}">Remove</button><button class="small-button" data-stock="${product.id}" data-stock-value="${product.stock}">${product.stock > 0 ? "Mark unavailable" : "Restock"}</button></div></div>`).join("") || empty("No products yet","Add your first product to the catalogue.")}</section></div>`;
   } else if (ownerSection === "storefront") {
     const colors = businessThemeColors(business);
-    main.innerHTML = `<div class="page-container">${header("Shop appearance","Set the storefront details and colours customers see.","BUSINESS WORKSPACE")}<div class="workspace-tabs">${ownerTabs()}</div><section class="dashboard-panel storefront-settings"><form id="storefront-form" class="checkout-form"><label class="form-field">Business display name<input name="name" required value="${escape(business.name)}"></label><label class="form-field">Shop ID / handle<input name="handle" required value="${escape(business.handle)}"></label><label class="form-field">Category<select name="category">${["Cafe & dining","Bakery","Groceries","Stationery","Flowers & gifts","Other local business"].map((item) => `<option ${business.category === item ? "selected" : ""}>${item}</option>`).join("")}</select></label><label class="form-field">Short description<input name="description" required value="${escape(business.description)}"></label><label class="form-field">Neighbourhood offer<input name="offer" value="${escape(business.offer)}"></label><label class="form-field">Opening hours<input name="hours" value="${escape(business.hours)}"></label><label class="form-field">Branches (one per line)<textarea name="branches" rows="3" required>${escape((business.branches || []).join("\n"))}</textarea></label><label class="form-field">Store theme<select name="theme"><option value="coffee" ${business.theme === "coffee" ? "selected" : ""}>Coffee brown</option><option value="green" ${business.theme === "green" ? "selected" : ""}>Fresh green</option><option value="maroon" ${business.theme === "maroon" ? "selected" : ""}>Stationery maroon</option></select></label><label class="form-field">Storefront finish<select name="theme_style"><option value="solid" ${business.theme_style === "solid" ? "selected" : ""}>Solid</option><option value="gradient" ${business.theme_style === "gradient" ? "selected" : ""}>Gradient</option><option value="glass" ${business.theme_style === "glass" ? "selected" : ""}>Glass</option></select></label><div class="theme-color-fields"><label>Accent<input type="color" name="accent" value="${colors.accent}"></label><label>Surface<input type="color" name="surface" value="${colors.surface}"></label><label>Text<input type="color" name="ink" value="${colors.ink}"></label></div><button class="primary-button">Save storefront preferences</button></form></section></div>`;
+    main.innerHTML = `<div class="page-container">${header("Shop appearance","Set the storefront details and colours customers see.","BUSINESS WORKSPACE")}<div class="workspace-tabs">${ownerTabs()}</div><section class="dashboard-panel storefront-settings"><form id="storefront-form" class="checkout-form"><label class="form-field">Business display name<input name="name" required value="${escape(business.name)}"></label><label class="form-field">Shop ID / handle<input name="handle" required value="${escape(business.handle)}"></label><label class="form-field">Category<select name="category">${["Cafe & dining","Bakery","Groceries","Stationery","Flowers & gifts","Other local business"].map((item) => `<option ${business.category === item ? "selected" : ""}>${item}</option>`).join("")}</select></label><label class="form-field">Short description<input name="description" required value="${escape(business.description)}"></label><label class="form-field">Public storefront image URL<input name="image_url" type="url" value="${escape(business.image_url || "")}" placeholder="https://..."></label><label class="form-field">Or upload a storefront image<input name="image_file" type="file" accept="image/jpeg,image/png,image/gif,image/webp"><small>JPG, PNG, GIF or WebP; maximum 5 MB.</small></label><label class="form-field">Neighbourhood offer<input name="offer" value="${escape(business.offer)}"></label><label class="form-field">Opening hours<input name="hours" value="${escape(business.hours)}"></label><label class="form-field">Branches (one per line)<textarea name="branches" rows="3" required>${escape((business.branches || []).join("\n"))}</textarea></label><label class="form-field">Store theme<select name="theme"><option value="coffee" ${business.theme === "coffee" ? "selected" : ""}>Coffee brown</option><option value="green" ${business.theme === "green" ? "selected" : ""}>Fresh green</option><option value="maroon" ${business.theme === "maroon" ? "selected" : ""}>Stationery maroon</option></select></label><label class="form-field">Storefront finish<select name="theme_style"><option value="solid" ${business.theme_style === "solid" ? "selected" : ""}>Solid</option><option value="gradient" ${business.theme_style === "gradient" ? "selected" : ""}>Gradient</option><option value="glass" ${business.theme_style === "glass" ? "selected" : ""}>Glass</option></select></label><div class="theme-color-fields"><label>Accent<input type="color" name="accent" value="${colors.accent}"></label><label>Surface<input type="color" name="surface" value="${colors.surface}"></label><label>Text<input type="color" name="ink" value="${colors.ink}"></label></div><button class="primary-button">Save storefront preferences</button></form></section></div>`;
   } else if (ownerSection === "ads") {
     main.innerHTML = `<div class="page-container">${header("Tell the neighbourhood","Promotions need administrator approval before they appear publicly.","BUSINESS WORKSPACE")}<div class="workspace-tabs">${ownerTabs()}</div><button class="primary-button" data-action="add-promotion">＋ Create promotion</button><section class="dashboard-panel">${ads.filter((ad) => ad.business_id === business.id).map(adCard).join("") || empty("No promotions yet","Create one to tell the neighbourhood what’s new.")}</section></div>`;
   } else {
@@ -381,11 +394,12 @@ function checkoutModal() {
 }
 
 function applyBusinessModal() {
-  modalRoot.innerHTML = `<div class="modal-backdrop" data-close-modal></div><section class="modal modal-simple" role="dialog" aria-modal="true"><button class="close-button modal-close" data-close-modal aria-label="Close">×</button><h2>Apply to join the neighbourhood</h2><p>An administrator reviews each new business before it appears publicly.</p><form id="business-form" class="checkout-form"><label class="form-field">Business name<input name="name" required></label><label class="form-field">Shop handle<input name="handle" required placeholder="@yourshop"></label><label class="form-field">Category<select name="category"><option>Cafe & dining</option><option>Bakery</option><option>Groceries</option><option>Stationery</option><option>Flowers & gifts</option><option>Other local business</option></select></label><label class="form-field">Description<input name="description" required maxlength="250"></label><label class="form-field">Branch / address<input name="branch" required></label><label class="form-field">Opening hours<input name="hours"></label><button class="primary-button">Submit for review</button></form></section>`;
+  modalRoot.innerHTML = `<div class="modal-backdrop" data-close-modal></div><section class="modal modal-simple" role="dialog" aria-modal="true"><button class="close-button modal-close" data-close-modal aria-label="Close">×</button><h2>Apply to join the neighbourhood</h2><p>An administrator reviews each new business before it appears publicly.</p><form id="business-form" class="checkout-form"><label class="form-field">Business name<input name="name" required></label><label class="form-field">Shop handle<input name="handle" required placeholder="@yourshop"></label><label class="form-field">Category<select name="category"><option>Cafe & dining</option><option>Bakery</option><option>Groceries</option><option>Stationery</option><option>Flowers & gifts</option><option>Other local business</option></select></label><label class="form-field">Description<input name="description" required maxlength="250"></label><label class="form-field">Public storefront image URL (optional)<input name="image_url" type="url" placeholder="https://..."></label><label class="form-field">Branch / address<input name="branch" required></label><label class="form-field">Opening hours<input name="hours"></label><button class="primary-button">Submit for review</button></form></section>`;
 }
 
 function productModal(product = null) {
-  modalRoot.innerHTML = `<div class="modal-backdrop" data-close-modal></div><section class="modal modal-simple" role="dialog" aria-modal="true"><button class="close-button modal-close" data-close-modal aria-label="Close">×</button><h2>${product ? "Edit product" : "Add something to your shelf"}</h2><form id="product-form" class="checkout-form" ${product ? `data-product-id="${product.id}"` : ""}><label class="form-field">Product name<input name="name" required value="${escape(product?.name || "")}"></label><label class="form-field">Category<input name="category" required value="${escape(product?.category || "")}"></label><label class="form-field">Price (₹)<input name="price" type="number" min="1" step="1" required value="${product?.price || ""}"></label><label class="form-field">Description<input name="details" value="${escape(product?.details || "")}"></label><label class="form-field">Stock<input name="stock" type="number" min="0" step="1" value="${product?.stock ?? 10}" required></label><label class="form-field">Emoji<input name="emoji" maxlength="4" value="${escape(product?.emoji || "✨")}"></label><button class="primary-button">${product ? "Save product" : "Add product"}</button></form></section>`;
+  const categories = myBusiness()?.categories || [];
+  modalRoot.innerHTML = `<div class="modal-backdrop" data-close-modal></div><section class="modal modal-simple" role="dialog" aria-modal="true"><button class="close-button modal-close" data-close-modal aria-label="Close">×</button><h2>${product ? "Edit product" : "Add something to your shelf"}</h2>${categories.length ? "" : `<p>Add a category on your product shelf before adding products.</p>`}<form id="product-form" class="checkout-form" ${product ? `data-product-id="${product.id}"` : ""}><label class="form-field">Product name<input name="name" required value="${escape(product?.name || "")}"></label><label class="form-field">Category<select name="category" required><option value="">Choose a category</option>${categories.map((name) => `<option ${product?.category === name ? "selected" : ""}>${escape(name)}</option>`).join("")}</select></label><label class="form-field">Price (₹)<input name="price" type="number" min="1" step="1" required value="${product?.price || ""}"></label><label class="form-field">Description<input name="details" value="${escape(product?.details || "")}"></label><label class="form-field">Stock<input name="stock" type="number" min="0" step="1" value="${product?.stock ?? 10}" required></label><label class="form-field">Emoji<input name="emoji" maxlength="4" value="${escape(product?.emoji || "✨")}"></label><label class="form-field">Product image URL<input name="image_url" type="url" value="${escape(product?.image_url || "")}" placeholder="https://..."></label><label class="form-field">Or upload a product image<input name="image_file" type="file" accept="image/jpeg,image/png,image/gif,image/webp"><small>JPG, PNG, GIF or WebP; maximum 5 MB.</small></label><button class="primary-button" ${categories.length ? "" : "disabled"}>${product ? "Save product" : "Add product"}</button></form></section>`;
 }
 
 function promotionModal() {
@@ -409,6 +423,41 @@ function cartModal() {
 
 function getFormValues(form) {
   return Object.fromEntries(new FormData(form).entries());
+}
+
+function validateImageUrl(value) {
+  const imageUrl = String(value || "").trim();
+  if (!imageUrl) return "";
+  let parsed;
+  try {
+    parsed = new URL(imageUrl);
+  } catch {
+    throw new Error("Enter a valid image URL.");
+  }
+  if (!["http:", "https:"].includes(parsed.protocol)) {
+    throw new Error("Image URLs must start with http:// or https://.");
+  }
+  return parsed.href;
+}
+
+async function uploadImage(file, businessId, folder) {
+  if (!(file instanceof File) || file.size === 0) return "";
+  const extensions = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/gif": "gif",
+    "image/webp": "webp"
+  };
+  const extension = extensions[file.type];
+  if (!extension) throw new Error("Choose a JPG, PNG, GIF or WebP image.");
+  if (file.size > 5 * 1024 * 1024) throw new Error("Images must be 5 MB or smaller.");
+
+  const path = `${businessId}/${folder}/${crypto.randomUUID()}.${extension}`;
+  const { data, error } = await supabase.storage
+    .from("business-images")
+    .upload(path, file, { contentType: file.type, cacheControl: "3600", upsert: false });
+  if (error) throw error;
+  return supabase.storage.from("business-images").getPublicUrl(data.path).data.publicUrl;
 }
 
 async function onClick(event) {
@@ -662,6 +711,7 @@ async function onSubmit(event) {
       handle: handle.trim(),
       category: values.category,
       description: values.description.trim(),
+      image_url: validateImageUrl(values.image_url),
       hours: values.hours.trim(),
       branches: [values.branch.trim()],
       status: "pending"
@@ -676,13 +726,18 @@ async function onSubmit(event) {
   if (form.id === "product-form") {
     event.preventDefault();
     const business = myBusiness();
+    const imageFile = form.elements.namedItem("image_file").files[0];
+    const imageUrl = imageFile
+      ? await uploadImage(imageFile, business.id, "products")
+      : validateImageUrl(values.image_url);
     const productValues = {
       name: values.name.trim(),
       category: values.category.trim(),
       price: Number(values.price),
       details: values.details.trim(),
       stock: Number(values.stock),
-      emoji: values.emoji || "✨"
+      emoji: values.emoji || "✨",
+      image_url: imageUrl
     };
     const query = form.dataset.productId
       ? supabase.from("products").update(productValues).eq("id", form.dataset.productId)
@@ -693,6 +748,23 @@ async function onSubmit(event) {
     await loadData();
     render();
     notify("Product added to your catalogue.");
+    return;
+  }
+  if (form.id === "category-form") {
+    event.preventDefault();
+    const business = myBusiness();
+    const name = values.name.trim();
+    if (business.categories.some((categoryName) => categoryName.toLocaleLowerCase() === name.toLocaleLowerCase())) {
+      throw new Error("That category already exists.");
+    }
+    const { error } = await supabase.from("business_categories").insert({
+      business_id: business.id,
+      name
+    });
+    if (error) throw error;
+    await loadData();
+    render();
+    notify("Category added to your public catalogue.");
     return;
   }
   if (form.id === "promotion-form") {
@@ -728,10 +800,16 @@ async function onSubmit(event) {
   if (form.id === "storefront-form") {
     event.preventDefault();
     const handle = values.handle.startsWith("@") ? values.handle : `@${values.handle}`;
+    const business = myBusiness();
+    const imageFile = form.elements.namedItem("image_file").files[0];
+    const imageUrl = imageFile
+      ? await uploadImage(imageFile, business.id, "storefront")
+      : validateImageUrl(values.image_url);
     const { error } = await supabase.from("businesses").update({
       name: values.name.trim(),
       handle: handle.trim(),
       description: values.description.trim(),
+      image_url: imageUrl,
       offer: values.offer.trim(),
       hours: values.hours.trim(),
       category: values.category,
@@ -817,7 +895,7 @@ function renderStartupError(error) {
   document.body.classList.add("auth-screen");
   const databaseMissing = ["PGRST205", "42P01"].includes(error?.code)
     || /schema cache|relation .* does not exist|could not find the table/i.test(error?.message || "");
-  main.innerHTML = `<section class="setup-message"><span class="setup-icon">${databaseMissing ? "🛠️" : "☁️"}</span><p class="eyebrow">${databaseMissing ? "DATABASE SETUP NEEDED" : "CONNECTION ISSUE"}</p><h1>${databaseMissing ? "Your shops are almost ready" : "We couldn’t connect"}</h1><p>${databaseMissing ? "In Supabase SQL Editor, run the marketplace migration first, then reviews and storefront customization. If the marketplace tables are already installed, skip that migration." : escape(error?.message || "Check your internet connection and Supabase project settings, then try again.")}</p>${databaseMissing ? '<code>supabase/migrations/20261028000000_marketplace.sql</code><code>supabase/migrations/20261028010000_business_reviews.sql</code><code>supabase/migrations/20261028020000_storefront_customization.sql</code>' : ""}<button class="primary-button" data-action="retry">Try again</button></section>`;
+  main.innerHTML = `<section class="setup-message"><span class="setup-icon">${databaseMissing ? "🛠️" : "☁️"}</span><p class="eyebrow">${databaseMissing ? "DATABASE SETUP NEEDED" : "CONNECTION ISSUE"}</p><h1>${databaseMissing ? "Your shops are almost ready" : "We couldn’t connect"}</h1><p>${databaseMissing ? "In Supabase SQL Editor, run the marketplace, reviews, storefront customization, and catalogue images/categories migrations in order." : escape(error?.message || "Check your internet connection and Supabase project settings, then try again.")}</p>${databaseMissing ? '<code>supabase/migrations/20261028000000_marketplace.sql</code><code>supabase/migrations/20261028010000_business_reviews.sql</code><code>supabase/migrations/20261028020000_storefront_customization.sql</code><code>supabase/migrations/20261028030000_catalog_images_categories.sql</code>' : ""}<button class="primary-button" data-action="retry">Try again</button></section>`;
 }
 
 document.addEventListener("click", (event) => { onClick(event).catch(fail); });
