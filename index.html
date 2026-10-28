@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f6f7fb" />
+    <title>Pussore — your town, closer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="#" data-page="home" aria-label="Pussore home">
+          <span class="brand-mark">P<span>.</span></span>
+          <span class="brand-name">Pussore</span>
+        </a>
+        <div class="topbar-location">
+          <span class="location-icon">⌖</span>
+          <span class="location-copy"><small>Your neighbourhood</small><strong>Indiranagar, Bengaluru</strong></span>
+          <span class="chevron">⌄</span>
+        </div>
+        <label class="search-box">
+          <span aria-hidden="true">⌕</span>
+          <input id="global-search" type="search" placeholder="Search shops, products, and more..." autocomplete="off" />
+          <kbd>⌘ K</kbd>
+        </label>
+        <div class="topbar-actions">
+          <button class="sound-toggle" id="sound-toggle" type="button" data-toggle-sound aria-pressed="true" aria-label="Turn interface sounds off" title="Turn interface sounds off">🔊</button>
+          <button class="icon-button notification-button" aria-label="Notifications">♧<i></i></button>
+          <button class="account-button" id="account-button" data-page="profile"><span class="avatar avatar-small" id="topbar-avatar">A</span><span id="topbar-greeting">Hi, Ananya</span><span class="chevron">⌄</span></button>
+        </div>
+      </header>
+
+      <div class="workspace">
+        <aside class="sidebar">
+          <div class="side-label" id="sidebar-label">YOUR SPACE</div>
+          <nav class="side-nav" id="side-nav" aria-label="Main navigation"></nav>
+          <div class="sidebar-spacer"></div>
+          <div class="neighbour-card">
+            <div class="neighbour-illustration"><span>☀</span><b>☺</b></div>
+            <strong>Good things grow<br />close to home.</strong>
+            <p>Every local purchase makes our neighbourhood a little brighter.</p>
+            <button data-page="explore">Explore nearby <span>→</span></button>
+          </div>
+          <button class="sidebar-profile" data-page="profile"><span class="avatar" id="sidebar-avatar">A</span><span class="profile-copy"><strong id="sidebar-profile-name">Ananya Rao</strong><small>Local member</small></span><span class="profile-more">↗</span></button>
+        </aside>
+
+        <main class="main-content" id="main-content" tabindex="-1"></main>
+      </div>
+
+      <nav class="mobile-nav" aria-label="Mobile navigation">
+        <button class="active" data-page="home"><span>⌂</span>Home</button>
+        <button data-page="explore"><span>⌕</span>Explore</button>
+        <button data-page="following"><span>♡</span>Following</button>
+        <button data-page="profile"><span>☺</span>Profile</button>
+        <button data-page="owner"><span>▦</span>Manage</button>
+      </nav>
+    </div>
+
+    <div class="overlay" id="overlay" hidden></div>
+    <aside class="cart-panel" id="cart-panel" aria-label="Shopping cart" aria-hidden="true"></aside>
+    <div class="modal-root" id="modal-root"></div>
+    <div class="toast-region" id="toast-region" aria-live="polite"></div>
+    <script type="module" src="main.js"></script>
+  </body>
+</html>
